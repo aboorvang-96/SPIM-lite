@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Button, Surface, useTheme, Card, Divider, Chip } from 'react-native-paper';
+import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput } from 'react-native-paper';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { format, subDays } from 'date-fns';
 import MachineLogPopup from '../../components/attendance/MachineLogPopup';
+import { AttendanceRecord } from '../../types';
+
+const ATTENDANCE_STATUS_OPTIONS: AttendanceRecord['status'][] = ['Present', 'Leave', 'Holiday', 'Half Day', 'Week Off', 'No Week Off'];
 
 export default function AttendanceScreen() {
   const theme = useTheme();
@@ -15,10 +18,21 @@ export default function AttendanceScreen() {
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
+  const [statusMenuVisible, setStatusMenuVisible] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
   const currentRecord = records[todayStr];
+
+  // Pre-fill the dropdown with the currently saved status (if any) so the
+  // employee can change it; otherwise keep the default 'Present'.
+  useEffect(() => {
+    const saved = currentRecord?.status;
+    if (saved && ATTENDANCE_STATUS_OPTIONS.includes(saved)) {
+      setSelectedStatus(saved);
+    }
+  }, [currentRecord?.status]);
   
   // Calculate cycle (26th to 25th)
   let cycleStartMonth = today.getMonth();
@@ -47,10 +61,10 @@ export default function AttendanceScreen() {
 
   const assignedMachine = employee ? getMachineForEmployee(employee.id) : null;
 
-  const handleMarkPresent = () => {
-    markAttendance(todayStr, 'Present');
-    // Step 3: automatically open Machine Log popup right after success
-    setMachinePopupVisible(true);
+  const handleMarkAttendance = () => {
+    // Task 6: mark attendance and stop. Machine log is a separate action
+    // the employee performs deliberately from the Machines tab.
+    markAttendance(todayStr, selectedStatus);
   };
 
   const handleOpenMachineLog = () => setMachinePopupVisible(true);
@@ -64,12 +78,14 @@ export default function AttendanceScreen() {
           {format(today, 'EEEE, dd MMM yyyy')}
         </Text>
         
-        {currentRecord ? (
-          <View style={styles.statusBox}>
+        {currentRecord && (
+          <View style={[styles.statusBox, { marginBottom: 16 }]}>
             <Text variant="headlineSmall" style={{ color: (theme.colors as any).success, fontWeight: 'bold' }}>
               {currentRecord.status}
             </Text>
-            <Text variant="bodyLarge">Time In: {currentRecord.timeIn}</Text>
+            {currentRecord.timeIn ? (
+              <Text variant="bodyLarge">Time In: {currentRecord.timeIn}</Text>
+            ) : null}
             <View style={styles.machineRow}>
               {assignedMachine ? (
                 <Chip icon="cog" compact style={styles.machineChip}>{assignedMachine}</Chip>
@@ -81,21 +97,57 @@ export default function AttendanceScreen() {
               </Button>
             </View>
           </View>
-        ) : (
-          <View>
+        )}
+
+        {/* Status dropdown — always available so the employee can mark or
+            change today's status (Present / Leave / Holiday / Half Day). */}
+        <View style={{ width: '100%' }}>
+          {!currentRecord && (
             <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
               Not Marked
             </Text>
-            <Button 
-              mode="contained" 
-              icon="hand-wave" 
-              onPress={handleMarkPresent}
-              style={{ borderRadius: 8, paddingVertical: 8 }}
-            >
-              Mark Present Now
-            </Button>
-          </View>
-        )}
+          )}
+          <Menu
+            visible={statusMenuVisible}
+            onDismiss={() => setStatusMenuVisible(false)}
+            anchor={
+              <TextInput
+                mode="outlined"
+                value={selectedStatus}
+                editable={false}
+                label="Status"
+                right={
+                  <TextInput.Icon
+                    icon={statusMenuVisible ? 'menu-up' : 'menu-down'}
+                    onPress={() => setStatusMenuVisible(true)}
+                  />
+                }
+                onPressIn={() => setStatusMenuVisible(true)}
+                dense
+              />
+            }
+            contentStyle={{ backgroundColor: theme.colors.surface }}
+          >
+            {ATTENDANCE_STATUS_OPTIONS.map(opt => (
+              <Menu.Item
+                key={opt}
+                title={opt}
+                onPress={() => {
+                  setSelectedStatus(opt);
+                  setStatusMenuVisible(false);
+                }}
+              />
+            ))}
+          </Menu>
+          <Button
+            mode="contained"
+            icon="hand-wave"
+            onPress={handleMarkAttendance}
+            style={{ borderRadius: 8, paddingVertical: 8, marginTop: 16 }}
+          >
+            {currentRecord ? 'Update Status' : 'Mark Attendance'}
+          </Button>
+        </View>
       </Surface>
 
       <Text variant="titleLarge" style={[styles.sectionTitle, { color: theme.colors.primary }]}>

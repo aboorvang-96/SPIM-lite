@@ -1,17 +1,41 @@
+import { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { useTheme } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useAuthStore } from '../../store/authStore';
+import { useEmployeeStore } from '../../store/employeeStore';
+import { useAttendanceStore } from '../../store/attendanceStore';
+import { useSalaryStore } from '../../store/salaryStore';
+import { useMachineStore } from '../../store/machineStore';
+import SpimHeader from '../../components/ui/SpimHeader';
 
 export default function TabsLayout() {
   const theme = useTheme();
 
+  // Once the authenticated tab tree mounts, pull fresh data for every store
+  // from the SPIM Suite backend. Each store guards against concurrent fetches
+  // so this is safe to call on every mount.
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const refreshEmployee   = useEmployeeStore(s => s.refresh);
+  const refreshAttendance = useAttendanceStore(s => s.refresh);
+  const refreshSalary     = useSalaryStore(s => s.refresh);
+  const loadMachines      = useMachineStore(s => s.loadMachines);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshEmployee();
+    refreshAttendance();
+    refreshSalary();
+    loadMachines();
+  }, [isAuthenticated, refreshEmployee, refreshAttendance, refreshSalary, loadMachines]);
+
   return (
     <Tabs
       screenOptions={{
-        headerStyle: {
-          backgroundColor: theme.colors.primary,
-        },
-        headerTintColor: theme.colors.onPrimary,
+        // Shared SPIM header for every tab. Left = current page title,
+        // center = "SPIM" wordmark (navy). One source of truth — adding a
+        // new tab automatically gets the same header.
+        header: ({ options }) => <SpimHeader title={(options.title as string) || ''} />,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.outline,
       }}

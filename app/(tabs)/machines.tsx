@@ -1,129 +1,320 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Surface, Card, useTheme, Divider, Chip, IconButton } from 'react-native-paper';
+import {
+  Text,
+  Surface,
+  Card,
+  useTheme,
+  Menu,
+  TextInput,
+  Button,
+  HelperText,
+  ActivityIndicator,
+  Divider,
+} from 'react-native-paper';
+import { format } from 'date-fns';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
-import { format } from 'date-fns';
+import AddStatusDialog from '../../components/machines/AddStatusDialog';
+import { isMachineLogRestricted } from '../../utils/permissions';
 
 export default function MachinesScreen() {
   const theme = useTheme();
-  const machines = useMachineStore(state => state.machines);
-  const logs = useMachineStore(state => state.logs);
-  const loadMachines = useMachineStore(state => state.loadMachines);
   const employee = useEmployeeStore(state => state.employee);
 
-  useEffect(() => { loadMachines(); }, [loadMachines]);
+  const machineList = useMachineStore(state => state.machineList);
+  const loaded = useMachineStore(state => state.loaded);
+  const loading = useMachineStore(state => state.loading);
+  const loadMachines = useMachineStore(state => state.loadMachines);
 
-  const summary = useMemo(() => Object.values(machines), [machines]);
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const myLog = employee ? logs.find(l => l.employeeId === employee.id && l.date === todayStr) : undefined;
-  const totalAssigned = summary.reduce((s, m) => s + m.tmpCount, 0);
+  const statusList = useMachineStore(state => state.statusList);
+  const loadStatus = useMachineStore(state => state.loadStatus);
+
+  const selectedMachine = useMachineStore(state => state.selectedMachine);
+  const status = useMachineStore(state => state.status);
+  const remarks = useMachineStore(state => state.remarks);
+  const setSelectedMachine = useMachineStore(state => state.setSelectedMachine);
+  const setStatus = useMachineStore(state => state.setStatus);
+  const setRemarks = useMachineStore(state => state.setRemarks);
+  const resetForm = useMachineStore(state => state.resetForm);
+  const saveLog = useMachineStore(state => state.saveLog);
+  const getTodayLogForEmployee = useMachineStore(state => state.getTodayLogForEmployee);
+
+  const [machineMenu, setMachineMenu] = useState(false);
+  const [statusMenu, setStatusMenu] = useState(false);
+  const [addStatusVisible, setAddStatusVisible] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('');
+
+  useEffect(() => {
+    loadMachines();
+    loadStatus();
+  }, [loadMachines, loadStatus]);
+
+  const today = new Date();
+  const dateLabel = format(today, 'dd MMM yyyy');
+  const todayLog = employee ? getTodayLogForEmployee(employee.id) : undefined;
+  const restricted = isMachineLogRestricted(employee);
+
+  if (restricted) {
+    return (
+      <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Text variant="titleLarge" style={[styles.heading, { color: theme.colors.primary }]}>
+          Machine Log
+        </Text>
+        <Card style={styles.summaryCard} mode="elevated" elevation={1}>
+          <Card.Content>
+            <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
+              Access Restricted
+            </Text>
+            <Text variant="bodyMedium" style={{ color: '#666', textAlign: 'center' }}>
+              Machine logs are not available for your role / level.
+            </Text>
+          </Card.Content>
+        </Card>
+      </ScrollView>
+    );
+  }
+
+  const machineError = touched && !selectedMachine;
+  const statusError = touched && !status;
+
+  const handleSave = async () => {
+    if (!employee) return;
+    if (!selectedMachine || !status) {
+      setTouched(true);
+      return;
+    }
+    setSaving(true);
+    const ok = await saveLog(employee.id);
+    setSaving(false);
+    if (ok) {
+      setSavedMessage('Machine log saved.');
+      setTouched(false);
+      setTimeout(() => setSavedMessage(''), 2500);
+    }
+  };
+
+  const handleCancel = () => {
+    resetForm();
+    setTouched(false);
+    setSavedMessage('');
+  };
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Text variant="titleLarge" style={[styles.heading, { color: theme.colors.primary }]}>
+        Machine Log
+      </Text>
 
-      <Surface style={styles.headerCard} elevation={2}>
-        <Text variant="titleMedium" style={{ color: theme.colors.secondary, marginBottom: 6 }}>Machine Work Summary</Text>
-        <Text variant="headlineSmall" style={{ fontWeight: 'bold' }}>{summary.length} Machines</Text>
-        <Text variant="bodyMedium" style={{ color: '#666', marginTop: 4 }}>
-          {totalAssigned} workers assigned today
+      <Surface style={styles.formCard} elevation={2}>
+        {/* Machine Number */}
+        <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+          Machine Number
         </Text>
+        {loading && !loaded ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text variant="bodySmall" style={{ marginLeft: 8 }}>Loading machines...</Text>
+          </View>
+        ) : (
+          <Menu
+            visible={machineMenu}
+            onDismiss={() => setMachineMenu(false)}
+            anchor={
+              <TextInput
+                mode="outlined"
+                value={selectedMachine ?? ''}
+                placeholder="Select Machine"
+                editable={false}
+                right={
+                  <TextInput.Icon
+                    icon={machineMenu ? 'menu-up' : 'menu-down'}
+                    onPress={() => setMachineMenu(true)}
+                  />
+                }
+                onPressIn={() => setMachineMenu(true)}
+                error={machineError}
+                dense
+              />
+            }
+            contentStyle={{ backgroundColor: theme.colors.surface }}
+          >
+            {machineList.length === 0 ? (
+              <Menu.Item title="No machines available" disabled />
+            ) : (
+              machineList.map(m => (
+                <Menu.Item
+                  key={m.id}
+                  title={m.machineNo}
+                  onPress={() => {
+                    setSelectedMachine(m.machineNo);
+                    setMachineMenu(false);
+                  }}
+                />
+              ))
+            )}
+          </Menu>
+        )}
+        {machineError && <HelperText type="error">Please select a machine number.</HelperText>}
+
+        {/* Date (read-only) */}
+        <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+          Date
+        </Text>
+        <TextInput
+          mode="outlined"
+          value={dateLabel}
+          editable={false}
+          left={<TextInput.Icon icon="calendar" />}
+          dense
+        />
+
+        {/* Status */}
+        <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+          Status
+        </Text>
+        <Menu
+          visible={statusMenu}
+          onDismiss={() => setStatusMenu(false)}
+          anchor={
+            <TextInput
+              mode="outlined"
+              value={status ?? ''}
+              placeholder="Select Status"
+              editable={false}
+              right={
+                <TextInput.Icon
+                  icon={statusMenu ? 'menu-up' : 'menu-down'}
+                  onPress={() => setStatusMenu(true)}
+                />
+              }
+              onPressIn={() => setStatusMenu(true)}
+              error={statusError}
+              dense
+            />
+          }
+          contentStyle={{ backgroundColor: theme.colors.surface }}
+        >
+          {statusList.map((s) => (
+            <Menu.Item
+              key={s}
+              title={s}
+              onPress={() => {
+                setStatus(s);
+                setStatusMenu(false);
+              }}
+            />
+          ))}
+          <Divider />
+          <Menu.Item
+            leadingIcon="plus-circle-outline"
+            title="Add New Status"
+            titleStyle={{ color: theme.colors.primary, fontWeight: '600' }}
+            onPress={() => {
+              setStatusMenu(false);
+              setAddStatusVisible(true);
+            }}
+          />
+        </Menu>
+        {statusError && <HelperText type="error">Please select a status.</HelperText>}
+
+        {/* Remarks */}
+        <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+          Remarks
+        </Text>
+        <TextInput
+          mode="outlined"
+          value={remarks}
+          onChangeText={setRemarks}
+          placeholder="Optional remarks"
+          multiline
+          numberOfLines={3}
+          style={styles.remarks}
+        />
+
+        {savedMessage ? (
+          <Text style={[styles.savedMessage, { color: (theme.colors as any).success ?? '#10B981' }]}>
+            {savedMessage}
+          </Text>
+        ) : null}
+
+        <View style={styles.actionsRow}>
+          <Button
+            mode="outlined"
+            onPress={handleCancel}
+            disabled={saving}
+            style={styles.actionButton}
+          >
+            Cancel
+          </Button>
+          <Button
+            mode="contained"
+            icon="content-save"
+            onPress={handleSave}
+            loading={saving}
+            disabled={saving}
+            style={styles.actionButton}
+          >
+            Save
+          </Button>
+        </View>
       </Surface>
 
-      {myLog && (
-        <Card style={styles.myLogCard} mode="elevated" elevation={1}>
+      <Text variant="titleLarge" style={[styles.heading, { color: theme.colors.primary, marginTop: 24 }]}>
+        Today's Machine Work
+      </Text>
+
+      {todayLog ? (
+        <Card style={styles.summaryCard} mode="elevated" elevation={1}>
           <Card.Content>
-            <View style={styles.rowBetween}>
-              <Text variant="titleMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                Your Log Today
+            <View style={styles.summaryRow}>
+              <Text variant="labelMedium" style={styles.summaryLabel}>Machine Number</Text>
+              <Text variant="bodyMedium" style={styles.summaryValue}>{todayLog.machineNo}</Text>
+            </View>
+            <Divider style={styles.summaryDivider} />
+            <View style={styles.summaryRow}>
+              <Text variant="labelMedium" style={styles.summaryLabel}>Date</Text>
+              <Text variant="bodyMedium" style={styles.summaryValue}>
+                {format(new Date(todayLog.date), 'dd MMM yyyy')}
               </Text>
-              <Chip icon="check" compact style={{ backgroundColor: '#DCFCE7' }}>{myLog.machineNumber}</Chip>
             </View>
-            <Text variant="bodySmall" style={{ color: '#666', marginTop: 6 }}>
-              {format(new Date(myLog.date), 'dd MMM yyyy')} at {myLog.time} • {myLog.location}
-            </Text>
-          </Card.Content>
-        </Card>
-      )}
-
-      <Text variant="titleLarge" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
-        Machines
-      </Text>
-
-      {summary.length === 0 ? (
-        <Card style={styles.card} mode="elevated" elevation={1}>
-          <Card.Content>
-            <Text variant="bodyMedium" style={{ color: '#666', textAlign: 'center' }}>
-              No machines loaded yet.
-            </Text>
-          </Card.Content>
-        </Card>
-      ) : summary.map(m => (
-        <Card key={m.id} style={styles.card} mode="elevated" elevation={1}>
-          <Card.Content>
-            <View style={styles.rowBetween}>
-              <View style={{ flexShrink: 1 }}>
-                <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{m.machineNumber}</Text>
-                <Text variant="bodySmall" style={{ color: '#666' }} numberOfLines={1}>{m.location}</Text>
-              </View>
-              <View style={styles.tmpBox}>
-                <Text variant="labelSmall" style={{ color: theme.colors.secondary }}>TMP</Text>
-                <Text variant="headlineSmall" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{m.tmpCount}</Text>
-              </View>
+            <Divider style={styles.summaryDivider} />
+            <View style={styles.summaryRow}>
+              <Text variant="labelMedium" style={styles.summaryLabel}>Status</Text>
+              <Text variant="bodyMedium" style={styles.summaryValue}>{todayLog.status}</Text>
             </View>
-
-            <Divider style={{ marginVertical: 10 }} />
-
-            <View style={styles.miniRow}>
-              <View style={styles.miniBox}>
-                <Text variant="labelSmall" style={{ color: '#666' }}>Assigned</Text>
-                <Text variant="titleMedium" style={{ fontWeight: '600' }}>{m.assignedEmployees.length}</Text>
-              </View>
-              <View style={styles.miniBox}>
-                <Text variant="labelSmall" style={{ color: '#666' }}>Attendance</Text>
-                <Text variant="titleMedium" style={{ fontWeight: '600' }}>{m.attendanceCount}</Text>
-              </View>
-              <View style={styles.miniBox}>
-                <Text variant="labelSmall" style={{ color: '#666' }}>Date</Text>
-                <Text variant="bodyMedium" style={{ fontWeight: '600' }}>{format(new Date(), 'dd MMM')}</Text>
-              </View>
+            <Divider style={styles.summaryDivider} />
+            <View style={styles.summaryRow}>
+              <Text variant="labelMedium" style={styles.summaryLabel}>Remarks</Text>
+              <Text
+                variant="bodyMedium"
+                style={[styles.summaryValue, { flex: 1, textAlign: 'right' }]}
+                numberOfLines={3}
+              >
+                {todayLog.remarks ? todayLog.remarks : '—'}
+              </Text>
             </View>
-          </Card.Content>
-        </Card>
-      ))}
-
-      <Text variant="titleLarge" style={[styles.sectionTitle, { color: theme.colors.primary, marginTop: 8 }]}>
-        Recent Logs
-      </Text>
-
-      {logs.length === 0 ? (
-        <Card style={styles.card} mode="elevated" elevation={1}>
-          <Card.Content>
-            <Text variant="bodyMedium" style={{ color: '#666', textAlign: 'center' }}>
-              No machine logs yet. Mark attendance to start logging.
-            </Text>
           </Card.Content>
         </Card>
       ) : (
-        <Card style={styles.card} mode="elevated" elevation={1}>
+        <Card style={styles.summaryCard} mode="elevated" elevation={1}>
           <Card.Content>
-            {logs.slice(0, 8).map((log, idx) => (
-              <View key={log.id}>
-                <View style={styles.logRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text variant="bodyMedium" style={{ fontWeight: '600' }}>{log.employeeName}</Text>
-                    <Text variant="labelSmall" style={{ color: '#666' }}>{log.employeeId} • {format(new Date(log.date), 'dd MMM')} {log.time}</Text>
-                  </View>
-                  <Chip compact style={styles.logChip}>{log.machineNumber}</Chip>
-                </View>
-                {idx < Math.min(7, logs.length - 1) && <Divider style={{ marginVertical: 8 }} />}
-              </View>
-            ))}
+            <Text variant="bodyMedium" style={{ color: '#666', textAlign: 'center' }}>
+              No machine work logged for today yet.
+            </Text>
           </Card.Content>
         </Card>
       )}
 
       <View style={{ height: 40 }} />
+
+      <AddStatusDialog
+        visible={addStatusVisible}
+        onDismiss={() => setAddStatusVisible(false)}
+        onAdded={(newStatus) => setStatus(newStatus)}
+      />
     </ScrollView>
   );
 }
@@ -133,51 +324,60 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  headerCard: {
-    padding: 20,
-    borderRadius: 20,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  myLogCard: {
-    borderRadius: 16,
-    marginBottom: 16,
-  },
-  sectionTitle: {
+  heading: {
     fontWeight: 'bold',
     marginBottom: 12,
+    marginTop: 8,
   },
-  card: {
+  formCard: {
+    padding: 16,
     borderRadius: 16,
-    marginBottom: 12,
   },
-  rowBetween: {
+  fieldLabel: {
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  remarks: {
+    minHeight: 80,
+  },
+  savedMessage: {
+    marginTop: 12,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 16,
+  },
+  actionButton: {
+    marginLeft: 8,
+    borderRadius: 8,
+  },
+  summaryCard: {
+    borderRadius: 16,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 8,
   },
-  tmpBox: {
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: '#DBEAFE',
-    minWidth: 64,
+  summaryLabel: {
+    color: '#64748B',
   },
-  miniRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  summaryValue: {
+    fontWeight: '600',
+    color: '#0F172A',
+    maxWidth: '60%',
   },
-  miniBox: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  logRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  logChip: {
-    backgroundColor: '#DBEAFE',
+  summaryDivider: {
+    backgroundColor: '#E2E8F0',
   },
 });

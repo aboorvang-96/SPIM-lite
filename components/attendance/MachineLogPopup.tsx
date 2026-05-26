@@ -1,9 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Portal, Dialog, Text, Button, useTheme, Menu, TextInput, ActivityIndicator, HelperText } from 'react-native-paper';
+import {
+  Portal,
+  Dialog,
+  Text,
+  Button,
+  useTheme,
+  Menu,
+  TextInput,
+  ActivityIndicator,
+  HelperText,
+  Divider,
+} from 'react-native-paper';
+import { format } from 'date-fns';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
-import { format } from 'date-fns';
+import AddStatusDialog from '../machines/AddStatusDialog';
+import { isMachineLogRestricted } from '../../utils/permissions';
 
 interface Props {
   visible: boolean;
@@ -11,109 +24,134 @@ interface Props {
   onSaved?: () => void;
 }
 
+/**
+ * Quick Machine Log popup launched right after marking attendance.
+ * Uses the simplified Machine Log schema: Machine Number, Date, Status, Remarks.
+ */
 function MachineLogPopupInner({ visible, onDismiss, onSaved }: Props) {
   const theme = useTheme();
   const employee = useEmployeeStore(state => state.employee);
-  const machines = useMachineStore(state => state.machines);
+
+  const machineList = useMachineStore(state => state.machineList);
   const loaded = useMachineStore(state => state.loaded);
   const loading = useMachineStore(state => state.loading);
   const loadMachines = useMachineStore(state => state.loadMachines);
-  const assignEmployeeToMachine = useMachineStore(state => state.assignEmployeeToMachine);
-  const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const statusList = useMachineStore(state => state.statusList);
+  const loadStatus = useMachineStore(state => state.loadStatus);
+
+  const selectedMachine = useMachineStore(state => state.selectedMachine);
+  const status = useMachineStore(state => state.status);
+  const remarks = useMachineStore(state => state.remarks);
+  const setSelectedMachine = useMachineStore(state => state.setSelectedMachine);
+  const setStatus = useMachineStore(state => state.setStatus);
+  const setRemarks = useMachineStore(state => state.setRemarks);
+  const resetForm = useMachineStore(state => state.resetForm);
+  const saveLog = useMachineStore(state => state.saveLog);
+  const getTodayLogForEmployee = useMachineStore(state => state.getTodayLogForEmployee);
+
+  const [machineMenu, setMachineMenu] = useState(false);
+  const [statusMenu, setStatusMenu] = useState(false);
+  const [addStatusVisible, setAddStatusVisible] = useState(false);
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const now = useMemo(() => new Date(), [visible]);
-  const dateStr = format(now, 'dd MMM yyyy');
-  const timeStr = format(now, 'HH:mm');
+  const dateLabel = format(new Date(), 'dd MMM yyyy');
 
   useEffect(() => {
-    if (visible && !loaded) {
-      loadMachines();
+    if (!visible) return;
+    if (!loaded) loadMachines();
+    loadStatus();
+    if (employee) {
+      const existing = getTodayLogForEmployee(employee.id);
+      if (existing) {
+        setSelectedMachine(existing.machineNo);
+        setStatus(existing.status);
+        setRemarks(existing.remarks);
+      }
     }
-    if (visible && employee) {
-      const existing = getMachineForEmployee(employee.id);
-      setSelected(existing);
-      setTouched(false);
-    }
-  }, [visible, loaded, employee, loadMachines, getMachineForEmployee]);
+    setTouched(false);
+    // intentionally only rerun on visibility change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
-  const machineList = useMemo(() => Object.values(machines), [machines]);
-  const showError = touched && !selected;
+  const machineError = touched && !selectedMachine;
+  const statusError = touched && !status;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!employee) return;
-    if (!selected) {
+    if (!selectedMachine || !status) {
       setTouched(true);
       return;
     }
     setSaving(true);
-    assignEmployeeToMachine(
-      selected,
-      employee.id,
-      employee.name,
-      employee.site,
-      format(now, 'yyyy-MM-dd'),
-      timeStr,
-    );
+    const ok = await saveLog(employee.id);
     setSaving(false);
-    onSaved?.();
+    if (ok) {
+      onSaved?.();
+      onDismiss();
+    }
+  };
+
+  const handleCancel = () => {
+    resetForm();
     onDismiss();
   };
 
   if (!employee) return null;
 
+  if (isMachineLogRestricted(employee)) {
+    return (
+      <Portal>
+        <Dialog visible={visible} onDismiss={onDismiss} style={styles.dialog}>
+          <Dialog.Title style={styles.title}>Machine Log</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 8 }}>
+              Access Restricted
+            </Text>
+            <Text variant="bodyMedium" style={{ color: '#666' }}>
+              Machine logs are not available for your role / level.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={onDismiss}>Close</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+    );
+  }
+
   return (
     <Portal>
-      <Dialog visible={visible} onDismiss={onDismiss} style={styles.dialog}>
-        <Dialog.Title style={styles.title}>Machine Work Log</Dialog.Title>
+      <Dialog visible={visible} onDismiss={handleCancel} style={styles.dialog}>
+        <Dialog.Title style={styles.title}>Machine Log</Dialog.Title>
         <Dialog.Content>
-          <View style={styles.readonlyBlock}>
-            <View style={styles.row}>
-              <Text variant="labelMedium" style={styles.label}>Employee</Text>
-              <Text variant="bodyMedium" style={styles.value}>{employee.name}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text variant="labelMedium" style={styles.label}>Employee ID</Text>
-              <Text variant="bodyMedium" style={styles.value}>{employee.id}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text variant="labelMedium" style={styles.label}>Date</Text>
-              <Text variant="bodyMedium" style={styles.value}>{dateStr}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text variant="labelMedium" style={styles.label}>Time</Text>
-              <Text variant="bodyMedium" style={styles.value}>{timeStr}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text variant="labelMedium" style={styles.label}>Site</Text>
-              <Text variant="bodyMedium" style={[styles.value, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{employee.site}</Text>
-            </View>
-          </View>
-
-          <Text variant="labelLarge" style={[styles.dropdownLabel, { color: theme.colors.primary }]}>Machine Number</Text>
-
+          <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+            Machine Number
+          </Text>
           {loading && !loaded ? (
-            <View style={styles.loadingBox}>
+            <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={theme.colors.primary} />
               <Text variant="bodySmall" style={{ marginLeft: 8 }}>Loading machines...</Text>
             </View>
           ) : (
             <Menu
-              visible={menuOpen}
-              onDismiss={() => setMenuOpen(false)}
+              visible={machineMenu}
+              onDismiss={() => setMachineMenu(false)}
               anchor={
                 <TextInput
                   mode="outlined"
-                  value={selected ?? ''}
+                  value={selectedMachine ?? ''}
                   placeholder="Select Machine"
                   editable={false}
-                  right={<TextInput.Icon icon={menuOpen ? 'menu-up' : 'menu-down'} onPress={() => setMenuOpen(true)} />}
-                  onPressIn={() => setMenuOpen(true)}
-                  error={showError}
+                  right={
+                    <TextInput.Icon
+                      icon={machineMenu ? 'menu-up' : 'menu-down'}
+                      onPress={() => setMachineMenu(true)}
+                    />
+                  }
+                  onPressIn={() => setMachineMenu(true)}
+                  error={machineError}
                   dense
                 />
               }
@@ -121,23 +159,113 @@ function MachineLogPopupInner({ visible, onDismiss, onSaved }: Props) {
             >
               {machineList.length === 0 ? (
                 <Menu.Item title="No machines available" disabled />
-              ) : machineList.map(m => (
-                <Menu.Item
-                  key={m.id}
-                  title={`${m.machineNumber}  •  TMP ${m.tmpCount}`}
-                  onPress={() => { setSelected(m.machineNumber); setMenuOpen(false); setTouched(true); }}
-                />
-              ))}
+              ) : (
+                machineList.map(m => (
+                  <Menu.Item
+                    key={m.id}
+                    title={m.machineNo}
+                    onPress={() => {
+                      setSelectedMachine(m.machineNo);
+                      setMachineMenu(false);
+                    }}
+                  />
+                ))
+              )}
             </Menu>
           )}
+          {machineError && <HelperText type="error">Please select a machine number.</HelperText>}
 
-          {showError && <HelperText type="error">Please select a machine number.</HelperText>}
+          <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+            Date
+          </Text>
+          <TextInput
+            mode="outlined"
+            value={dateLabel}
+            editable={false}
+            left={<TextInput.Icon icon="calendar" />}
+            dense
+          />
+
+          <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+            Status
+          </Text>
+          <Menu
+            visible={statusMenu}
+            onDismiss={() => setStatusMenu(false)}
+            anchor={
+              <TextInput
+                mode="outlined"
+                value={status ?? ''}
+                placeholder="Select Status"
+                editable={false}
+                right={
+                  <TextInput.Icon
+                    icon={statusMenu ? 'menu-up' : 'menu-down'}
+                    onPress={() => setStatusMenu(true)}
+                  />
+                }
+                onPressIn={() => setStatusMenu(true)}
+                error={statusError}
+                dense
+              />
+            }
+            contentStyle={{ backgroundColor: theme.colors.surface }}
+          >
+            {statusList.map((s) => (
+              <Menu.Item
+                key={s}
+                title={s}
+                onPress={() => {
+                  setStatus(s);
+                  setStatusMenu(false);
+                }}
+              />
+            ))}
+            <Divider />
+            <Menu.Item
+              leadingIcon="plus-circle-outline"
+              title="Add New Status"
+              titleStyle={{ color: theme.colors.primary, fontWeight: '600' }}
+              onPress={() => {
+                setStatusMenu(false);
+                setAddStatusVisible(true);
+              }}
+            />
+          </Menu>
+          {statusError && <HelperText type="error">Please select a status.</HelperText>}
+
+          <Text variant="labelLarge" style={[styles.fieldLabel, { color: theme.colors.primary }]}>
+            Remarks
+          </Text>
+          <TextInput
+            mode="outlined"
+            value={remarks}
+            onChangeText={setRemarks}
+            placeholder="Optional remarks"
+            multiline
+            numberOfLines={3}
+            style={styles.remarks}
+          />
         </Dialog.Content>
         <Dialog.Actions>
-          <Button onPress={onDismiss} disabled={saving}>Cancel</Button>
-          <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} icon="content-save">Save</Button>
+          <Button onPress={handleCancel} disabled={saving}>Cancel</Button>
+          <Button
+            mode="contained"
+            onPress={handleSave}
+            loading={saving}
+            disabled={saving}
+            icon="content-save"
+          >
+            Save
+          </Button>
         </Dialog.Actions>
       </Dialog>
+
+      <AddStatusDialog
+        visible={addStatusVisible}
+        onDismiss={() => setAddStatusVisible(false)}
+        onAdded={(newStatus) => setStatus(newStatus)}
+      />
     </Portal>
   );
 }
@@ -156,32 +284,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     paddingBottom: 0,
   },
-  readonlyBlock: {
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  label: {
-    color: '#64748B',
-  },
-  value: {
-    fontWeight: '600',
-    color: '#0F172A',
-    maxWidth: '60%',
-  },
-  dropdownLabel: {
+  fieldLabel: {
     fontWeight: 'bold',
+    marginTop: 12,
     marginBottom: 6,
-    marginTop: 4,
   },
-  loadingBox: {
+  loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
+  },
+  remarks: {
+    minHeight: 80,
   },
 });

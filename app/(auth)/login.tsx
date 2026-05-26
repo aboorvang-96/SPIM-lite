@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button, Text, useTheme, Surface } from 'react-native-paper';
 import { useAuthStore } from '../../store/authStore';
+import { useEmployeeStore } from '../../store/employeeStore';
+import { mobileLogin } from '../../services/api';
+import { Employee } from '../../types';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,31 +13,67 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const login = useAuthStore(state => state.login);
+  const setAuth = useAuthStore(state => state.setAuth);
+  const setEmployee = useEmployeeStore(state => state.setEmployee);
   const router = useRouter();
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setError('');
-    if (!employeeId || !password) {
+    const trimmedId = employeeId.trim();
+    if (!trimmedId || !password) {
       setError('Please enter Employee ID and Password.');
       return;
     }
-    
+
     setLoading(true);
-    // Mock API call delay
-    setTimeout(() => {
-      setLoading(false);
-      // Mock validation
-      if (employeeId === 'EMP1024' && password === 'password123') {
-        login(employeeId);
-        router.replace('/(tabs)/dashboard');
-      } else {
-        setError('Invalid credentials. Try EMP1024 / password123');
+    try {
+      const resp = await mobileLogin(
+        trimmedId,
+        password,
+        `${Platform.OS} ${Platform.Version}`,
+      );
+
+      if (!resp.success || !resp.token || !resp.employee) {
+        setError(resp.error || resp.message || 'Invalid credentials.');
+        return;
       }
-    }, 800);
+
+      // Persist token + employee identifier
+      await setAuth({
+        userId: resp.employee.employee_id || resp.employee.login_id,
+        token: resp.token,
+        passwordResetRequired: resp.password_reset_required,
+      });
+
+      // Map backend employee payload onto the local Employee shape. Fields the
+      // backend does not currently return are left blank — they can be filled
+      // later from /api/mobile/profile/ which carries bank + PF details.
+      const mapped: Employee = {
+        id:               resp.employee.employee_id || resp.employee.login_id,
+        name:             resp.employee.name || '',
+        role:             resp.employee.designation || '',
+        level:            '',
+        department:       resp.employee.department || '',
+        site:             resp.employee.site || resp.employee.location || '',
+        mobile:           '',
+        email:            '',
+        address:          '',
+        emergencyContact: '',
+        bankDetails:      '',
+        pfNumber:         '',
+        joiningDate:      '',
+      };
+      setEmployee(mapped);
+
+      router.replace('/(tabs)/dashboard');
+    } catch (e: any) {
+      setError(e?.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

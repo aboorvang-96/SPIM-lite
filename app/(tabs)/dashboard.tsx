@@ -1,21 +1,24 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Card, Avatar, useTheme, Surface, IconButton, Chip } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import { Text, Card, Avatar, useTheme, Surface, IconButton, Chip, ActivityIndicator, Button } from 'react-native-paper';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useSalaryStore } from '../../store/salaryStore';
 import { useMachineStore } from '../../store/machineStore';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
+import { formatINR } from '../../utils/currencyFormatter';
 
 export default function DashboardScreen() {
   const theme = useTheme();
   const employee = useEmployeeStore(state => state.employee);
+  const employeeLoading = useEmployeeStore(state => state.loading);
+  const employeeError = useEmployeeStore(state => state.error);
+  const refreshEmployee = useEmployeeStore(state => state.refresh);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
   const getNetPay = useSalaryStore(state => state.getNetPay);
   const loadMachines = useMachineStore(state => state.loadMachines);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
-  const machines = useMachineStore(state => state.machines);
   const router = useRouter();
 
   useEffect(() => { loadMachines(); }, [loadMachines]);
@@ -44,10 +47,45 @@ export default function DashboardScreen() {
   const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
   const netPay = getNetPay(presentCount);
   const assignedMachine = employee ? getMachineForEmployee(employee.id) : null;
-  const machineList = Object.values(machines);
-  const totalTmp = machineList.reduce((s, m) => s + m.tmpCount, 0);
 
-  if (!employee) return null;
+  if (!employee) {
+    // Profile not yet hydrated. Distinguish in-flight refresh (spinner)
+    // from a finished-but-failed refresh (error + Retry) so the user
+    // never sees an infinite spinner when the backend is unreachable.
+    const isFetching = employeeLoading || !employeeError;
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        contentContainerStyle={styles.loadingContent}
+      >
+        {isFetching ? (
+          <>
+            <ActivityIndicator animating size="large" />
+            <Text variant="bodyMedium" style={{ marginTop: 12, color: '#666' }}>
+              Loading profile…
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text variant="titleMedium" style={{ color: theme.colors.error, textAlign: 'center' }}>
+              Could not load profile
+            </Text>
+            <Text variant="bodySmall" style={{ marginTop: 8, color: '#666', textAlign: 'center' }}>
+              {employeeError}
+            </Text>
+            <Button
+              mode="contained"
+              icon="refresh"
+              style={{ marginTop: 16 }}
+              onPress={() => refreshEmployee()}
+            >
+              Retry
+            </Button>
+          </>
+        )}
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -62,6 +100,51 @@ export default function DashboardScreen() {
         </View>
         <Avatar.Text size={48} label={employee.name.substring(0,2).toUpperCase()} style={{ backgroundColor: theme.colors.primary }} />
       </View>
+
+      {/* Company details — sourced from /api/mobile/profile/ → company.
+          Every field is hidden when empty so the card collapses gracefully
+          for tenants that haven't filled in CompanySettings yet. */}
+      {employee.company && (employee.company.name || employee.company.logoUrl ||
+        employee.company.address || employee.company.phone || employee.company.email) ? (
+        <Card style={styles.card} mode="elevated" elevation={1}>
+          <Card.Content>
+            <View style={styles.companyHeader}>
+              {employee.company.logoUrl ? (
+                <Image
+                  source={{ uri: employee.company.logoUrl }}
+                  style={styles.companyLogo}
+                  resizeMode="contain"
+                />
+              ) : null}
+              <View style={styles.companyHeaderText}>
+                {employee.company.name ? (
+                  <Text variant="titleMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
+                    {employee.company.name}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+            {employee.company.address ? (
+              <View style={styles.companyRow}>
+                <IconButton icon="map-marker-outline" size={18} iconColor={theme.colors.error} style={styles.companyIcon} />
+                <Text variant="bodySmall" style={styles.companyText}>{employee.company.address}</Text>
+              </View>
+            ) : null}
+            {employee.company.phone ? (
+              <View style={styles.companyRow}>
+                <IconButton icon="phone-outline" size={18} iconColor={theme.colors.primary} style={styles.companyIcon} />
+                <Text variant="bodySmall" style={styles.companyText}>{employee.company.phone}</Text>
+              </View>
+            ) : null}
+            {employee.company.email ? (
+              <View style={styles.companyRow}>
+                <IconButton icon="email-outline" size={18} iconColor={theme.colors.primary} style={styles.companyIcon} />
+                <Text variant="bodySmall" style={styles.companyText}>{employee.company.email}</Text>
+              </View>
+            ) : null}
+          </Card.Content>
+        </Card>
+      ) : null}
 
       <Card style={styles.card} mode="elevated" elevation={1}>
         <Card.Content>
@@ -93,7 +176,7 @@ export default function DashboardScreen() {
 
         <Surface style={styles.statBox} elevation={1}>
           <Text variant="titleSmall" style={{ color: theme.colors.onSurfaceVariant }}>Net Salary</Text>
-          <Text variant="headlineMedium" style={{ color: (theme.colors as any).success, fontWeight: 'bold' }}>${netPay.toLocaleString()}</Text>
+          <Text variant="headlineMedium" style={{ color: (theme.colors as any).success, fontWeight: 'bold' }}>{formatINR(netPay)}</Text>
           <Text variant="labelSmall">Estimated</Text>
         </Surface>
       </View>
@@ -120,28 +203,6 @@ export default function DashboardScreen() {
         </Card.Content>
       </Card>
 
-      <Card style={styles.card} mode="elevated" elevation={1}>
-        <Card.Title
-          title="Machine Workforce"
-          titleStyle={{ color: theme.colors.secondary, fontWeight: 'bold' }}
-          right={(props) => (
-            <IconButton {...props} icon="chevron-right" onPress={() => router.navigate('/(tabs)/machines')} />
-          )}
-        />
-        <Card.Content>
-          <View style={styles.row}>
-            <View style={[styles.miniStat, { backgroundColor: '#DBEAFE' }]}>
-              <Text variant="labelSmall" style={{ color: '#1E3A8A' }}>Machines</Text>
-              <Text variant="titleLarge" style={{ fontWeight: 'bold', color: theme.colors.primary }}>{machineList.length}</Text>
-            </View>
-            <View style={[styles.miniStat, { backgroundColor: '#DCFCE7' }]}>
-              <Text variant="labelSmall" style={{ color: '#065F46' }}>Total TMP</Text>
-              <Text variant="titleLarge" style={{ fontWeight: 'bold', color: (theme.colors as any).success }}>{totalTmp}</Text>
-            </View>
-          </View>
-        </Card.Content>
-      </Card>
-
     </ScrollView>
   );
 }
@@ -150,6 +211,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+  },
+  loadingContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
   },
   header: {
     flexDirection: 'row',
@@ -196,11 +263,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
-  miniStat: {
-    flex: 1,
-    marginHorizontal: 6,
-    padding: 12,
-    borderRadius: 12,
+  companyHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  companyLogo: {
+    width: 44,
+    height: 44,
+    marginRight: 12,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  companyHeaderText: {
+    flex: 1,
+  },
+  companyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 2,
+  },
+  companyIcon: {
+    margin: 0,
+    marginRight: 4,
+  },
+  companyText: {
+    flex: 1,
+    color: '#475569',
+    paddingTop: 6,
   },
 });
