@@ -166,13 +166,26 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       let cycleEndYear  = cycleStartYear;
       if (cycleEndMonth > 11) { cycleEndMonth = 0; cycleEndYear += 1; }
 
+      // Previous cycle starts one calendar month before cycleStartMonth.
+      // Fetching this month covers the 26th → end-of-month rows of the
+      // previous cycle (the 1st → 25th rows of the previous cycle live in
+      // cycleStartMonth, which is already fetched).
+      let prevCycleMonth = cycleStartMonth - 1;
+      let prevCycleYear  = cycleStartYear;
+      if (prevCycleMonth < 0) { prevCycleMonth = 11; prevCycleYear -= 1; }
+
       const startMonthStr = `${cycleStartYear}-${String(cycleStartMonth + 1).padStart(2, '0')}`;
       const endMonthStr   = `${cycleEndYear}-${String(cycleEndMonth + 1).padStart(2, '0')}`;
+      const prevMonthStr  = `${prevCycleYear}-${String(prevCycleMonth + 1).padStart(2, '0')}`;
 
-      // The 26→25 cycle always spans two calendar months — fetch both.
+      // The 26→25 cycle always spans two calendar months — fetch both,
+      // plus the previous cycle's first month so history is complete.
       const fetches = [fetchAttendance(startMonthStr)];
       if (endMonthStr !== startMonthStr) {
         fetches.push(fetchAttendance(endMonthStr));
+      }
+      if (prevMonthStr !== startMonthStr && prevMonthStr !== endMonthStr) {
+        fetches.push(fetchAttendance(prevMonthStr));
       }
       const results = await Promise.all(fetches);
       const list    = results.flat();

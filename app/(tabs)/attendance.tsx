@@ -27,6 +27,9 @@ export default function AttendanceScreen() {
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
+  // When today's attendance is already saved, the dropdown + button are
+  // hidden by default and the user clicks "Change" to reveal them.
+  const [showChangeDropdown, setShowChangeDropdown] = useState(false);
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -67,7 +70,17 @@ export default function AttendanceScreen() {
     cycleEndYear += 1;
   }
   const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 25);
-  
+
+  // Previous cycle = the 26 → 25 window that ended one day before cycleStart.
+  let prevCycleStartMonth = cycleStartMonth - 1;
+  let prevCycleStartYear  = cycleStartYear;
+  if (prevCycleStartMonth < 0) {
+    prevCycleStartMonth = 11;
+    prevCycleStartYear -= 1;
+  }
+  const prevCycleStart = new Date(prevCycleStartYear, prevCycleStartMonth, 26);
+  const prevCycleEnd   = new Date(cycleStartYear, cycleStartMonth, 25);
+
   const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
   // Roughly days so far in cycle (excluding Sundays realistically, but simplistic for now)
   const totalDaysSoFar = Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -78,6 +91,17 @@ export default function AttendanceScreen() {
     const dates: Date[] = [];
     let cur = new Date(today.getTime());
     while (cur >= cycleStart) {
+      dates.push(new Date(cur));
+      cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
+    }
+    return dates;
+  })();
+
+  // All dates in the previous cycle (26 → 25), most recent first.
+  const prevCycleDates: Date[] = (() => {
+    const dates: Date[] = [];
+    let cur = new Date(prevCycleEnd.getTime());
+    while (cur >= prevCycleStart) {
       dates.push(new Date(cur));
       cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
     }
@@ -99,6 +123,8 @@ export default function AttendanceScreen() {
     // Task 6: mark attendance and stop. Machine log is a separate action
     // the employee performs deliberately from the Machines tab.
     markAttendance(todayStr, selectedStatus);
+    // Collapse the dropdown back so the saved state is the default view.
+    setShowChangeDropdown(false);
   };
 
   const handleOpenMachineLog = () => setMachinePopupVisible(true);
@@ -145,6 +171,18 @@ export default function AttendanceScreen() {
             <Chip icon="lock" style={{ alignSelf: 'center', marginTop: 8, backgroundColor: '#F3F4F6' }}>
               Set by Admin
             </Chip>
+          ) : currentRecord && !showChangeDropdown ? (
+            // Attendance is already saved — keep the dropdown collapsed so the
+            // green status box is the visible source of truth. A small text
+            // button lets the employee opt-in to changing it.
+            <Button
+              mode="text"
+              compact
+              onPress={() => setShowChangeDropdown(true)}
+              style={{ alignSelf: 'center', marginTop: 4 }}
+            >
+              Change
+            </Button>
           ) : (
             <>
               <Menu
@@ -235,7 +273,36 @@ export default function AttendanceScreen() {
           })}
         </Card.Content>
       </Card>
-      
+
+      <Card style={[styles.historyCard, { marginTop: 16 }]} mode="elevated" elevation={1}>
+        <Card.Title
+          title="Previous Cycle"
+          subtitle={`${format(prevCycleStart, 'dd MMM')} to ${format(prevCycleEnd, 'dd MMM')}`}
+          titleStyle={{ color: theme.colors.secondary, fontWeight: 'bold' }}
+        />
+        <Card.Content>
+          {prevCycleDates.map((date, idx) => {
+            const dateStr = format(date, 'yyyy-MM-dd');
+            const rec = records[dateStr];
+            const statusColor = (rec?.status === 'Present' || rec?.status === 'Week Off')
+              ? (theme.colors as any).success
+              : (!rec ? '#999' : theme.colors.error);
+            return (
+              <View key={dateStr}>
+                <View style={styles.historyRow}>
+                  <Text variant="bodyLarge" style={{ width: 100 }}>{format(date, 'dd MMM')}</Text>
+                  <Text variant="bodyLarge" style={{ flex: 1, fontWeight: 'bold', color: statusColor }}>
+                    {rec ? rec.status : '—'}
+                  </Text>
+                  <Text variant="bodyMedium" style={{ color: '#666' }}>{rec?.timeIn || '--:--'}</Text>
+                </View>
+                {idx < prevCycleDates.length - 1 && <Divider style={{ marginVertical: 8 }} />}
+              </View>
+            );
+          })}
+        </Card.Content>
+      </Card>
+
       <View style={{ height: 40 }} />
 
       <MachineLogPopup
