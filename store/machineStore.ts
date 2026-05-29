@@ -40,6 +40,13 @@ interface MachineState {
 
   loadMachines: () => Promise<void>;
 
+  /**
+   * Cold-start hydration: fetches today's persisted worklog from Supabase
+   * for this employee and merges it into local `logs`. Idempotent — never
+   * overwrites a fresher optimistic entry made in the same session.
+   */
+  loadTodayLog: (employeeId: string) => Promise<void>;
+
   setSelectedMachine: (machineNo: string | null) => void;
   setStatus: (status: MachineStatus | null) => void;
   setRemarks: (remarks: string) => void;
@@ -93,6 +100,21 @@ export const useMachineStore = create<MachineState>((set, get) => ({
     }
   },
 
+  loadTodayLog: async (employeeId) => {
+    if (!employeeId) return;
+    const remote = await MachineService.getTodayMachineLog(employeeId);
+    if (!remote) return;
+    const date = todayISO();
+    // Merge: if a local optimistic log for the same (employee, date) already
+    // exists in state, keep it — it's at least as fresh as the remote row
+    // we just fetched (and may already include unsynced edits). Otherwise
+    // insert the remote row so the UI is populated after a cold start.
+    const { logs } = get();
+    const hasLocal = logs.some(l => l.employeeId === employeeId && l.date === date);
+    if (hasLocal) return;
+    set({ logs: [remote, ...logs] });
+  },
+
   setSelectedMachine: (machineNo) => set({ selectedMachine: machineNo }),
   setStatus: (status) => set({ status }),
   setRemarks: (remarks) => set({ remarks }),
@@ -121,8 +143,11 @@ export const useMachineStore = create<MachineState>((set, get) => ({
     const filtered = logs.filter(l => !(l.employeeId === employeeId && l.date === date));
     set({ logs: [newLog, ...filtered], date });
 
-    // Fire-and-forget future SPIM Suite sync
-    MachineService.saveMachineLog(newLog).catch(() => {});
+    // Fire-and-forget SPIM Suite sync. Failures are non-blocking (optimistic
+    // UI), but log them so missing columns / RLS errors are not invisible.
+    MachineService.saveMachineLog(newLog).catch((err) => {
+      console.warn('[machineStore.saveLog] supabase sync failed:', err?.message || err);
+    });
 
     return true;
   },

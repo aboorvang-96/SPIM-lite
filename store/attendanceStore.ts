@@ -11,38 +11,62 @@ interface AttendanceState {
   records: Record<string, AttendanceRecord>; // Key is YYYY-MM-DD
   loading: boolean;
   loaded: boolean;
+
   /** Pull this employee's attendance from the SPIM Suite backend. */
   refresh: () => Promise<void>;
+
   /**
-   * Mark attendance and persist to the backend. The backend upserts on
-   * (employee, date) so this never creates a duplicate row, and SPIM Suite
-   * payroll picks the value up immediately.
+   * Mark attendance and persist to the backend.
+   * Backend upserts on (employee, date).
    */
-  markAttendance: (date: string, status: AttendanceRecord['status']) => Promise<void>;
+  markAttendance: (
+    date: string,
+    status: AttendanceRecord['status']
+  ) => Promise<void>;
+
   getPresentCount: (startDate: string, endDate: string) => number;
 }
 
-// Map backend lower-snake-case status to the UI's title-case AttendanceRecord.
+/**
+ * Backend status → UI status
+ */
 function fromBackend(r: MobileAttendanceRecord): AttendanceRecord {
   const map: Record<string, AttendanceRecord['status']> = {
-    present:  'Present',
-    absent:   'Absent',
+    present: 'Present',
+    absent: 'Absent',
     half_day: 'Half Day',
-    leave:    'Leave',
+    leave: 'Leave',
+    week_off: 'Week Off',
+    no_week_off: 'No Week Off',
+    holiday: 'Holiday',
   };
-  return { date: r.date, status: map[r.status] ?? 'Absent' };
+
+  return {
+    date: r.date,
+    status: map[r.status] ?? 'Absent',
+  };
 }
 
-// Backend enum is {present, absent, half_day, leave}. 'Holiday',
-// 'Week Off' and 'No Week Off' have no backend equivalent — persist
-// them as 'leave' to preserve the API contract.
-function toBackendStatus(s: AttendanceRecord['status']): 'present' | 'absent' | 'half_day' | 'leave' {
-  if (s === 'Present')     return 'present';
-  if (s === 'Leave')       return 'leave';
-  if (s === 'Half Day')    return 'half_day';
-  if (s === 'Holiday')     return 'leave';
-  if (s === 'Week Off')    return 'leave';
-  if (s === 'No Week Off') return 'leave';
+/**
+ * UI status → Backend status
+ */
+function toBackendStatus(
+  s: AttendanceRecord['status']
+): 'present' | 'absent' | 'half_day' | 'leave' | 'week_off' | 'no_week_off' | 'holiday' {
+
+  if (s === 'Present') return 'present';
+
+  if (s === 'Leave') return 'leave';
+
+  if (s === 'Half Day') return 'half_day';
+
+  if (s === 'Holiday') return 'leave';
+
+  // IMPORTANT FIX
+  if (s === 'Week Off') return 'week_off';
+
+  if (s === 'No Week Off') return 'no_week_off';
+
   return 'absent';
 }
 
@@ -53,35 +77,62 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
   refresh: async () => {
     if (get().loading) return;
+
     set({ loading: true });
+
     try {
       const list = await fetchAttendance();
+
       const recs: Record<string, AttendanceRecord> = {};
+
       for (const r of list) {
         recs[r.date] = fromBackend(r);
       }
-      set({ records: recs, loading: false, loaded: true });
-    } catch {
-      set({ loading: false });
+
+      set({
+        records: recs,
+        loading: false,
+        loaded: true,
+      });
+
+    } catch (error) {
+      console.error('Attendance refresh failed:', error);
+
+      set({
+        loading: false,
+      });
     }
   },
 
   markAttendance: async (date, status) => {
     try {
-      const saved = await postAttendance(toBackendStatus(status), date);
+      const saved = await postAttendance(
+        toBackendStatus(status),
+        date
+      );
+
       set((state) => ({
         records: {
           ...state.records,
-          [date]: { ...fromBackend(saved), timeIn: format(new Date(), 'HH:mm') },
+          [date]: {
+            ...fromBackend(saved),
+            timeIn: format(new Date(), 'HH:mm'),
+          },
         },
       }));
-    } catch {
-      // Optimistic fallback so the UI still reflects the user's action even
-      // if the network call fails (a subsequent refresh() reconciles state).
+
+    } catch (error) {
+      console.error('Attendance update failed:', error);
+
+      // Optimistic fallback
       set((state) => ({
         records: {
           ...state.records,
-          [date]: { date, status, timeIn: format(new Date(), 'HH:mm') },
+          [date]: {
+            date,
+            status,
+            timeIn: format(new Date(), 'HH:mm'),
+          },
         },
       }));
     }
@@ -89,12 +140,23 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
   getPresentCount: (startDate, endDate) => {
     const { records } = get();
+
     let count = 0;
-    Object.values(records).forEach(record => {
-      if (record.date >= startDate && record.date <= endDate && record.status === 'Present') {
+
+    Object.values(records).forEach((record) => {
+      const isPaidDay =
+        record.status === 'Present' ||
+        record.status === 'Week Off';
+
+      if (
+        record.date >= startDate &&
+        record.date <= endDate &&
+        isPaidDay
+      ) {
         count++;
       }
     });
+
     return count;
   },
 }));

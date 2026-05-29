@@ -20,6 +20,12 @@ export default function TabsLayout() {
   const refreshAttendance = useAttendanceStore(s => s.refresh);
   const refreshSalary     = useSalaryStore(s => s.refresh);
   const loadMachines      = useMachineStore(s => s.loadMachines);
+  const loadTodayLog      = useMachineStore(s => s.loadTodayLog);
+  // Hydrate today's worklog as soon as the employee id is known. machineStore
+  // initialises `logs` to [] on cold start, so without this the "Today's
+  // Machine Work" card and dashboard chip would appear empty after a reload
+  // even though the row is persisted in projects_worklog.
+  const employeeUid = useEmployeeStore(s => s.employee?.id);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -28,6 +34,11 @@ export default function TabsLayout() {
     refreshSalary();
     loadMachines();
   }, [isAuthenticated, refreshEmployee, refreshAttendance, refreshSalary, loadMachines]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !employeeUid) return;
+    loadTodayLog(employeeUid);
+  }, [isAuthenticated, employeeUid, loadTodayLog]);
 
   return (
     <Tabs

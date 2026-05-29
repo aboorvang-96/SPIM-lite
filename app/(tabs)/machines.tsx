@@ -15,6 +15,7 @@ import {
 import { format } from 'date-fns';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
+import { useAttendanceStore } from '../../store/attendanceStore';
 import AddStatusDialog from '../../components/machines/AddStatusDialog';
 import { isMachineLogRestricted } from '../../utils/permissions';
 
@@ -39,6 +40,11 @@ export default function MachinesScreen() {
   const resetForm = useMachineStore(state => state.resetForm);
   const saveLog = useMachineStore(state => state.saveLog);
   const getTodayLogForEmployee = useMachineStore(state => state.getTodayLogForEmployee);
+  // Subscribe to logs so the "Today's Machine Work" card re-renders when
+  // machineStore.logs is hydrated by loadTodayLog (cold start) or updated
+  // by saveLog. The selector above returns a stable action ref otherwise.
+  const _machineLogs = useMachineStore(state => state.logs);
+  void _machineLogs;
 
   const [machineMenu, setMachineMenu] = useState(false);
   const [statusMenu, setStatusMenu] = useState(false);
@@ -54,7 +60,18 @@ export default function MachinesScreen() {
 
   const today = new Date();
   const dateLabel = format(today, 'dd MMM yyyy');
-  const todayLog = employee ? getTodayLogForEmployee(employee.id) : undefined;
+  // Business rule: "Today's Machine Work" only displays when today's
+  // attendance status is 'Present' or 'Half Day'. The worklog row in
+  // Supabase is preserved — flipping the status back re-shows the card.
+  const attendanceRecords = useAttendanceStore(state => state.records);
+  const todayAttendanceStatus = attendanceRecords[format(today, 'yyyy-MM-dd')]?.status;
+  const machineDisplayAllowed =
+    !todayAttendanceStatus
+    || todayAttendanceStatus === 'Present'
+    || todayAttendanceStatus === 'Half Day';
+  const todayLog = (employee && machineDisplayAllowed)
+    ? getTodayLogForEmployee(employee.id)
+    : undefined;
   const restricted = isMachineLogRestricted(employee);
 
   if (restricted) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button, Text, useTheme, Surface } from 'react-native-paper';
 import { useAuthStore } from '../../store/authStore';
@@ -9,20 +9,36 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
+  const [orgCode, setOrgCode]     = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [password, setPassword]   = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
 
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const theme   = useTheme();
+  const insets  = useSafeAreaInsets();
   const setAuth = useAuthStore(state => state.setAuth);
+  const storedOrgCode = useAuthStore(state => state.orgCode);
   const setEmployee = useEmployeeStore(state => state.setEmployee);
   const router = useRouter();
 
+  // Pre-fill org code from the last successful login so the employee
+  // doesn't have to retype it on every subsequent login.
+  useEffect(() => {
+    if (storedOrgCode && !orgCode) {
+      setOrgCode(storedOrgCode);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedOrgCode]);
+
   const handleLogin = async () => {
     setError('');
-    const trimmedId = employeeId.trim();
+    const trimmedOrg = orgCode.trim();
+    const trimmedId  = employeeId.trim();
+    if (!trimmedOrg) {
+      setError('Please enter your Org Code.');
+      return;
+    }
     if (!trimmedId || !password) {
       setError('Please enter Employee ID and Password.');
       return;
@@ -33,6 +49,7 @@ export default function LoginScreen() {
       const resp = await mobileLogin(
         trimmedId,
         password,
+        trimmedOrg,
         `${Platform.OS} ${Platform.Version}`,
       );
 
@@ -41,16 +58,17 @@ export default function LoginScreen() {
         return;
       }
 
-      // Persist token + employee identifier
+      // Persist token + employee identifier + org code
       await setAuth({
-        userId: resp.employee.employee_id || resp.employee.login_id,
-        token: resp.token,
+        userId:                resp.employee.employee_id || resp.employee.login_id,
+        token:                 resp.token,
+        orgCode:               trimmedOrg,
         passwordResetRequired: resp.password_reset_required,
       });
 
       // Map backend employee payload onto the local Employee shape. Fields the
-      // backend does not currently return are left blank — they can be filled
-      // later from /api/mobile/profile/ which carries bank + PF details.
+      // backend does not currently return are left blank — they are filled
+      // later from fetchProfile() which carries bank + PF + salary details.
       const mapped: Employee = {
         id:               resp.employee.employee_id || resp.employee.login_id,
         name:             resp.employee.name || '',
@@ -77,7 +95,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.primary }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -89,8 +107,20 @@ export default function LoginScreen() {
 
         <Surface style={styles.formContainer} elevation={4}>
           <Text variant="headlineSmall" style={[styles.title, { color: theme.colors.primary }]}>Welcome Back</Text>
-          
+
           {error ? <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text> : null}
+
+          {/* Org Code — identifies the tenant; auto-filled from last session */}
+          <TextInput
+            label="Org Code"
+            value={orgCode}
+            onChangeText={setOrgCode}
+            mode="outlined"
+            style={styles.input}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            left={<TextInput.Icon icon="domain" />}
+          />
 
           <TextInput
             label="Employee ID"
@@ -101,7 +131,7 @@ export default function LoginScreen() {
             autoCapitalize="characters"
             left={<TextInput.Icon icon="account" />}
           />
-          
+
           <TextInput
             label="Password"
             value={password}
@@ -112,9 +142,9 @@ export default function LoginScreen() {
             left={<TextInput.Icon icon="lock" />}
           />
 
-          <Button 
-            mode="contained" 
-            onPress={handleLogin} 
+          <Button
+            mode="contained"
+            onPress={handleLogin}
             loading={loading}
             style={styles.button}
             contentStyle={styles.buttonContent}
@@ -142,7 +172,7 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     padding: 32,
-    borderRadius: 24, // Modern large border radius
+    borderRadius: 24,
   },
   title: {
     fontWeight: 'bold',
@@ -162,5 +192,5 @@ const styles = StyleSheet.create({
   errorText: {
     marginBottom: 16,
     textAlign: 'center',
-  }
+  },
 });

@@ -19,6 +19,12 @@ export default function DashboardScreen() {
   const getNetPay = useSalaryStore(state => state.getNetPay);
   const loadMachines = useMachineStore(state => state.loadMachines);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
+  // Subscribe to logs so this component re-renders when machineStore.logs is
+  // hydrated by loadTodayLog or mutated by saveLog. Without this, the
+  // selector above returns the same action ref forever and the "Today's
+  // Machine" chip stays stale until something else triggers a render.
+  const _machineLogs = useMachineStore(state => state.logs);
+  void _machineLogs;
   const router = useRouter();
 
   useEffect(() => { loadMachines(); }, [loadMachines]);
@@ -46,7 +52,20 @@ export default function DashboardScreen() {
   
   const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
   const netPay = getNetPay(presentCount);
-  const assignedMachine = employee ? getMachineForEmployee(employee.id) : null;
+  // Business rule: machine work is only displayed when today's attendance
+  // status is 'Present' or 'Half Day'. The worklog row in Supabase is left
+  // untouched — this is a UI-only gate so the chip reappears automatically
+  // when the employee switches back to a working status.
+  const attendanceRecords = useAttendanceStore(state => state.records);
+  const todayDateStr = format(today, 'yyyy-MM-dd');
+  const todayAttendanceStatus = attendanceRecords[todayDateStr]?.status;
+  const machineDisplayAllowed =
+    !todayAttendanceStatus
+    || todayAttendanceStatus === 'Present'
+    || todayAttendanceStatus === 'Half Day';
+  const assignedMachine = (employee && machineDisplayAllowed)
+    ? getMachineForEmployee(employee.id)
+    : null;
 
   if (!employee) {
     // Profile not yet hydrated. Distinguish in-flight refresh (spinner)
@@ -101,9 +120,9 @@ export default function DashboardScreen() {
         <Avatar.Text size={48} label={employee.name.substring(0,2).toUpperCase()} style={{ backgroundColor: theme.colors.primary }} />
       </View>
 
-      {/* Company details — sourced from /api/mobile/profile/ → company.
-          Every field is hidden when empty so the card collapses gracefully
-          for tenants that haven't filled in CompanySettings yet. */}
+      {/* Company details — sourced from the employee's tenant CompanySettings
+          row in Supabase. Every field is hidden when empty so the card
+          collapses gracefully for tenants that haven't filled it in. */}
       {employee.company && (employee.company.name || employee.company.logoUrl ||
         employee.company.address || employee.company.phone || employee.company.email) ? (
         <Card style={styles.card} mode="elevated" elevation={1}>

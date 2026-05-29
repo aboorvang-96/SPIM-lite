@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, Linking } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import { Text, Card, Surface, useTheme, Divider, ProgressBar, Button, ActivityIndicator } from 'react-native-paper';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useAttendanceStore } from '../../store/attendanceStore';
@@ -220,8 +220,15 @@ export default function SalaryScreen() {
                         disabled={!p.is_generated}
                         onPress={async () => {
                           if (!p.is_generated) return;
-                          const url = await payslipDownloadUrl(p.id);
-                          Linking.openURL(url);
+                          try {
+                            const url = await payslipDownloadUrl(p.id);
+                            await Linking.openURL(url);
+                          } catch (e: any) {
+                            Alert.alert(
+                              'Payslip unavailable',
+                              e?.message || 'Could not fetch the payslip. Please try again later.',
+                            );
+                          }
                         }}
                       >
                         {p.is_generated ? 'Download' : 'Pending'}

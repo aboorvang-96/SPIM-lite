@@ -20,8 +20,8 @@ interface EmployeeState {
 
 /**
  * Employee profile is populated on successful login (from the login API
- * response) and can be refreshed against /api/mobile/profile/ to fetch the
- * full record including bank/PF/payslip/attendance summary.
+ * response) and can be refreshed via fetchProfile() (Supabase-backed) to
+ * fetch the full record including bank/PF/payslip/attendance summary.
  */
 export const useEmployeeStore = create<EmployeeState>((set, get) => ({
   employee: null,

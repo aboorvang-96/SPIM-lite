@@ -17,6 +17,10 @@ export default function AttendanceScreen() {
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
+  // Subscribe to logs so the "Today's Machine" chip re-renders when
+  // machineStore.logs is hydrated/updated (see dashboard.tsx for details).
+  const _machineLogs = useMachineStore(state => state.logs);
+  void _machineLogs;
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
@@ -59,7 +63,16 @@ export default function AttendanceScreen() {
   const totalDaysSoFar = Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const absentCount = totalDaysSoFar > 0 ? Math.max(0, totalDaysSoFar - presentCount) : 0;
 
-  const assignedMachine = employee ? getMachineForEmployee(employee.id) : null;
+  // Business rule: machine work is only displayed when today's attendance
+  // status is 'Present' or 'Half Day'. Hide otherwise without deleting the
+  // worklog row — switching the status back makes the chip reappear.
+  const machineDisplayAllowed =
+    !currentRecord?.status
+    || currentRecord.status === 'Present'
+    || currentRecord.status === 'Half Day';
+  const assignedMachine = (employee && machineDisplayAllowed)
+    ? getMachineForEmployee(employee.id)
+    : null;
 
   const handleMarkAttendance = () => {
     // Task 6: mark attendance and stop. Machine log is a separate action

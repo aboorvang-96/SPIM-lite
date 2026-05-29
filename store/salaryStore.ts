@@ -15,13 +15,48 @@ interface SalaryState {
   getAttendanceEarnings: (presentCount: number) => number;
 }
 
+/**
+ * Required paid days for a calendar month — MUST match the Suite rule in
+ * employees/views.py::_compute_attendance_earnings (Step 3):
+ *   - 30-day month       → 26
+ *   - 28- or 29-day mo.  → 24
+ *   - 31-day month (or other) → actual non-Sunday days
+ * Mobile previously hardcoded 30, which under-paid every cycle by ~13%.
+ */
+function requiredPaidDaysForMonth(year: number, monthIdx: number): number {
+  const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+  if (lastDay === 30) return 26;
+  if (lastDay === 28 || lastDay === 29) return 24;
+  let count = 0;
+  for (let d = 1; d <= lastDay; d++) {
+    if (new Date(year, monthIdx, d).getDay() !== 0) count++;
+  }
+  return count;
+}
+
+/**
+ * Working-days denominator for the current 26th→25th payroll cycle. Mirrors
+ * the Suite's per-month logic by anchoring on the cycle's END month (the
+ * month in which the cycle pays out).
+ */
+function currentCycleRequiredPaidDays(): number {
+  const today = new Date();
+  let endYear  = today.getFullYear();
+  let endMonth = today.getMonth();
+  if (today.getDate() > 25) {
+    endMonth += 1;
+    if (endMonth > 11) { endMonth = 0; endYear += 1; }
+  }
+  return requiredPaidDaysForMonth(endYear, endMonth);
+}
+
 // Conservative defaults so the UI never NaN's before the first refresh().
 const DEFAULT_DETAILS: SalaryDetails = {
   baseMonthly:      0,
   otAllowance:      0,
   pfDeduction:      0,
   advanceDeduction: 0,
-  totalWorkingDays: 30,
+  totalWorkingDays: currentCycleRequiredPaidDays(),
 };
 
 function num(v: string | null | undefined): number {
@@ -52,10 +87,15 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
         otAllowance:      num(latest?.ot_allowance),
         pfDeduction:      num(latest?.pf_employee),
         advanceDeduction: num(latest?.advance_pay),
-        totalWorkingDays: 30,
+        // Match the Suite's per-month required paid days (see helper above).
+        totalWorkingDays: currentCycleRequiredPaidDays(),
       };
       set({ details, payslips, loaded: true, loading: false });
-    } catch {
+    } catch (err: any) {
+      // Surface the underlying error so a silent fetchProfile / fetchPayslips
+      // failure doesn't leave the dashboard quietly stuck on the all-zero
+      // defaults (which look identical to "real" zero earnings).
+      console.warn('[salaryStore.refresh] failed:', err?.message || err);
       set({ loading: false });
     }
   },
