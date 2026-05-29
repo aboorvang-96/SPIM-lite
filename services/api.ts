@@ -309,7 +309,7 @@ export async function fetchAttendance(month?: string): Promise<MobileAttendanceR
     .filter(r => ['present', 'absent', 'half_day', 'leave', 'week_off', 'no_week_off', 'holiday'].includes(r.status))
     .map(r => ({
       id:     Number(r.id),
-      date:   str(r.date),
+      date:   str(r.date).slice(0, 10),
       status: r.status as MobileAttendanceRecord['status'],
       source: str(r.source),
     }));

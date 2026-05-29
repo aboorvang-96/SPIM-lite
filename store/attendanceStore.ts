@@ -202,15 +202,28 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         date,
       );
 
+      const markedRecord: AttendanceRecord = {
+        ...fromBackend(saved),
+        timeIn: format(new Date(), 'HH:mm'),
+      };
+
       set((state) => ({
         records: {
           ...state.records,
-          [date]: {
-            ...fromBackend(saved),
-            timeIn: format(new Date(), 'HH:mm'),
-          },
+          [date]: markedRecord,
         },
       }));
+
+      // Re-apply the marked record after any in-flight refresh completes,
+      // preventing a concurrent fetch from overwriting the just-marked status.
+      setTimeout(() => {
+        const current = get().records[date];
+        if (!current || current.source !== 'admin') {
+          set((state) => ({
+            records: { ...state.records, [date]: markedRecord },
+          }));
+        }
+      }, 1500);
 
       // Await the write so the data is guaranteed on disk before this
       // function returns — survives an immediate app close after marking.

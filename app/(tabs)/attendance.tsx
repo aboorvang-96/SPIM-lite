@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput } from 'react-native-paper';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { format } from 'date-fns';
+import { useFocusEffect } from 'expo-router';
 import MachineLogPopup from '../../components/attendance/MachineLogPopup';
 import { AttendanceRecord } from '../../types';
 
@@ -16,6 +17,7 @@ export default function AttendanceScreen() {
   const markAttendance = useAttendanceStore(state => state.markAttendance);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
   const isAdminLocked  = useAttendanceStore(state => state.isAdminLocked);
+  const refresh = useAttendanceStore(state => state.refresh);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
   // Subscribe to logs so the "Today's Machine" chip re-renders when
@@ -30,6 +32,12 @@ export default function AttendanceScreen() {
   const todayStr = format(today, 'yyyy-MM-dd');
   const currentRecord = records[todayStr];
   const adminLocked   = isAdminLocked(todayStr);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   // Pre-fill the dropdown with the currently saved status (if any) so the
   // employee can change it; otherwise keep the default 'Present'.

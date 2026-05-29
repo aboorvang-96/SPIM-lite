@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SalaryDetails } from '../types';
 import { SalaryCalculationService } from '../services/salaryCalculationService';
@@ -66,61 +65,90 @@ function num(v: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export const useSalaryStore = create<SalaryState>()(
-  persist(
-    (set, get) => ({
-      details:  { ...DEFAULT_DETAILS },
-      payslips: [],
-      loaded:   false,
-      loading:  false,
+// ---------------------------------------------------------------------------
+// Direct AsyncStorage persistence — same pattern as attendanceStore to avoid
+// the zustand-persist rehydration race where a late rehydration event can
+// overwrite fresh API data that arrived first.
+// ---------------------------------------------------------------------------
 
-      refresh: async () => {
-        if (get().loading) return;
-        set({ loading: true });
-        try {
-          const [profileResp, payslips] = await Promise.all([
-            fetchProfile(),
-            fetchPayslips(),
-          ]);
-          const prof = profileResp.profile;
-          const latest = prof?.latest_salary ?? null;
+const SALARY_KEY = '@spim-lite/salary-data/v1';
 
-          const baseMonthly = num(latest?.basic_salary) || num(prof?.base_salary);
-          const details: SalaryDetails = {
-            baseMonthly,
-            otAllowance:      num(latest?.ot_allowance),
-            pfDeduction:      num(latest?.pf_employee),
-            advanceDeduction: num(latest?.advance_pay),
-            // Match the Suite's per-month required paid days (see helper above).
-            totalWorkingDays: currentCycleRequiredPaidDays(),
-          };
-          set({ details, payslips, loaded: true, loading: false });
-        } catch (err: any) {
-          // Surface the underlying error so a silent fetchProfile / fetchPayslips
-          // failure doesn't leave the dashboard quietly stuck on the all-zero
-          // defaults (which look identical to "real" zero earnings).
-          console.warn('[salaryStore.refresh] failed:', err?.message || err);
-          set({ loading: false });
-        }
-      },
+async function loadPersistedSalary(): Promise<{ details: SalaryDetails; payslips: MobilePayslip[] }> {
+  try {
+    const raw = await AsyncStorage.getItem(SALARY_KEY);
+    if (!raw) return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return {
+        details:  parsed.details  ?? { ...DEFAULT_DETAILS },
+        payslips: parsed.payslips ?? [],
+      };
+    }
+    return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+  } catch {
+    return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+  }
+}
 
-      getDailyRate: () => SalaryCalculationService.computeDailyRate(get().details),
-      getAttendanceEarnings: (presentCount: number) =>
-        SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
-      getNetPay: (presentCount: number) =>
-        SalaryCalculationService.computeNetPay(get().details, presentCount),
-    }),
-    {
-      // Persist `details` and `payslips` so the Salary tab and dashboard
-      // earnings figures render the last-known values immediately on cold
-      // start, instead of flashing zeros until refresh() returns. `loading`
-      // and `loaded` are session-scoped and intentionally excluded.
-      name: 'salary-storage',
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({
-        details:  state.details,
-        payslips: state.payslips,
-      }),
-    },
-  ),
-);
+async function saveSalary(details: SalaryDetails, payslips: MobilePayslip[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SALARY_KEY, JSON.stringify({ details, payslips }));
+  } catch {
+    // best effort — UI already updated
+  }
+}
+
+export const useSalaryStore = create<SalaryState>((set, get) => ({
+  details:  { ...DEFAULT_DETAILS },
+  payslips: [],
+  loaded:   false,
+  loading:  false,
+
+  refresh: async () => {
+    if (get().loading) return;
+    set({ loading: true });
+
+    // Step 1: show persisted data immediately (avoids flash of zeros on cold start)
+    if (get().details.baseMonthly === 0) {
+      const stored = await loadPersistedSalary();
+      if (stored.details.baseMonthly > 0 || stored.payslips.length > 0) {
+        set({ details: stored.details, payslips: stored.payslips });
+      }
+    }
+
+    // Step 2: fetch fresh data from API
+    try {
+      const [profileResp, payslips] = await Promise.all([
+        fetchProfile(),
+        fetchPayslips(),
+      ]);
+      const prof = profileResp.profile;
+      const latest = prof?.latest_salary ?? null;
+
+      const baseMonthly = num(latest?.basic_salary) || num(prof?.base_salary);
+      const details: SalaryDetails = {
+        baseMonthly,
+        otAllowance:      num(latest?.ot_allowance),
+        pfDeduction:      num(latest?.pf_employee),
+        advanceDeduction: num(latest?.advance_pay),
+        // Match the Suite's per-month required paid days (see helper above).
+        totalWorkingDays: currentCycleRequiredPaidDays(),
+      };
+
+      // Step 3: set new data into store
+      set({ details, payslips, loaded: true, loading: false });
+
+      // Step 4: persist the fresh data
+      await saveSalary(details, payslips);
+    } catch (err: any) {
+      console.warn('[salaryStore.refresh] failed:', err?.message || err);
+      set({ loading: false });
+    }
+  },
+
+  getDailyRate: () => SalaryCalculationService.computeDailyRate(get().details),
+  getAttendanceEarnings: (presentCount: number) =>
+    SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
+  getNetPay: (presentCount: number) =>
+    SalaryCalculationService.computeNetPay(get().details, presentCount),
+}));

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import { Text, Card, Surface, useTheme, Divider, ProgressBar, Button, ActivityIndicator } from 'react-native-paper';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useSalaryStore } from '../../store/salaryStore';
+import { useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
 import { formatINR, formatINRPerDay, formatINRProgress } from '../../utils/currencyFormatter';
 import { payslipDownloadUrl } from '../../services/api';
@@ -19,6 +20,13 @@ export default function SalaryScreen() {
   const payslips = useSalaryStore(state => state.payslips);
   const getAttendanceEarnings = useSalaryStore(state => state.getAttendanceEarnings);
   const getNetPay = useSalaryStore(state => state.getNetPay);
+  const refresh = useSalaryStore(state => state.refresh);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const today = new Date();
   
