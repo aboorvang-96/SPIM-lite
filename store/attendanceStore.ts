@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AttendanceRecord } from '../types';
 import { format } from 'date-fns';
 import {
@@ -70,93 +72,116 @@ function toBackendStatus(
   return 'absent';
 }
 
-export const useAttendanceStore = create<AttendanceState>((set, get) => ({
-  records: {},
-  loading: false,
-  loaded: false,
+export const useAttendanceStore = create<AttendanceState>()(
+  persist(
+    (set, get) => ({
+      records: {},
+      loading: false,
+      loaded: false,
 
-  refresh: async () => {
-    if (get().loading) return;
+      refresh: async () => {
+        if (get().loading) return;
 
-    set({ loading: true });
+        set({ loading: true });
 
-    try {
-      const list = await fetchAttendance();
+        try {
+          // The SPIM Suite /api/mobile/attendance/ endpoint expects a
+          // ?month=YYYY-MM query parameter to scope the response. Without it
+          // the server returns nothing, which used to wipe today's locally
+          // marked status on every cold-start refresh — that is the bug
+          // observed where attendance "disappeared" after closing the app.
+          const month = format(new Date(), 'yyyy-MM');
+          const list = await fetchAttendance(month);
 
-      const recs: Record<string, AttendanceRecord> = {};
+          // Merge backend records into the existing map instead of replacing.
+          // Previously-hydrated months (loaded from AsyncStorage via the
+          // persist middleware below, or fetched on an earlier refresh) are
+          // preserved; the backend is authoritative for any date it returns.
+          set((state) => {
+            const recs: Record<string, AttendanceRecord> = { ...state.records };
+            for (const r of list) {
+              recs[r.date] = fromBackend(r);
+            }
+            return {
+              records: recs,
+              loading: false,
+              loaded: true,
+            };
+          });
 
-      for (const r of list) {
-        recs[r.date] = fromBackend(r);
-      }
+        } catch (error) {
+          console.error('Attendance refresh failed:', error);
 
-      set({
-        records: recs,
-        loading: false,
-        loaded: true,
-      });
+          set({
+            loading: false,
+          });
+        }
+      },
 
-    } catch (error) {
-      console.error('Attendance refresh failed:', error);
+      markAttendance: async (date, status) => {
+        try {
+          const saved = await postAttendance(
+            toBackendStatus(status),
+            date
+          );
 
-      set({
-        loading: false,
-      });
-    }
-  },
+          set((state) => ({
+            records: {
+              ...state.records,
+              [date]: {
+                ...fromBackend(saved),
+                timeIn: format(new Date(), 'HH:mm'),
+              },
+            },
+          }));
 
-  markAttendance: async (date, status) => {
-    try {
-      const saved = await postAttendance(
-        toBackendStatus(status),
-        date
-      );
+        } catch (error) {
+          console.error('Attendance update failed:', error);
 
-      set((state) => ({
-        records: {
-          ...state.records,
-          [date]: {
-            ...fromBackend(saved),
-            timeIn: format(new Date(), 'HH:mm'),
-          },
-        },
-      }));
+          // Optimistic fallback
+          set((state) => ({
+            records: {
+              ...state.records,
+              [date]: {
+                date,
+                status,
+                timeIn: format(new Date(), 'HH:mm'),
+              },
+            },
+          }));
+        }
+      },
 
-    } catch (error) {
-      console.error('Attendance update failed:', error);
+      getPresentCount: (startDate, endDate) => {
+        const { records } = get();
 
-      // Optimistic fallback
-      set((state) => ({
-        records: {
-          ...state.records,
-          [date]: {
-            date,
-            status,
-            timeIn: format(new Date(), 'HH:mm'),
-          },
-        },
-      }));
-    }
-  },
+        let count = 0;
 
-  getPresentCount: (startDate, endDate) => {
-    const { records } = get();
+        Object.values(records).forEach((record) => {
+          const isPaidDay =
+            record.status === 'Present' ||
+            record.status === 'Week Off';
 
-    let count = 0;
+          if (
+            record.date >= startDate &&
+            record.date <= endDate &&
+            isPaidDay
+          ) {
+            count++;
+          }
+        });
 
-    Object.values(records).forEach((record) => {
-      const isPaidDay =
-        record.status === 'Present' ||
-        record.status === 'Week Off';
-
-      if (
-        record.date >= startDate &&
-        record.date <= endDate &&
-        isPaidDay
-      ) {
-        count++;
-      }
-    });
-
-    return count;
-  },
-}));
+        return count;
+      },
+    }),
+    {
+      // Persist `records` across app restarts so today's marked attendance
+      // remains visible immediately on cold start, while the background
+      // refresh in (tabs)/_layout.tsx revalidates against the backend.
+      // `loading` and `loaded` are session-scoped and intentionally excluded.
+      name: 'attendance-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ records: state.records }),
+    },
+  ),
+);

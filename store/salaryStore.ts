@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SalaryDetails } from '../types';
 import { SalaryCalculationService } from '../services/salaryCalculationService';
 import { fetchProfile, fetchPayslips, MobilePayslip } from '../services/api';
@@ -64,45 +66,61 @@ function num(v: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export const useSalaryStore = create<SalaryState>((set, get) => ({
-  details:  { ...DEFAULT_DETAILS },
-  payslips: [],
-  loaded:   false,
-  loading:  false,
+export const useSalaryStore = create<SalaryState>()(
+  persist(
+    (set, get) => ({
+      details:  { ...DEFAULT_DETAILS },
+      payslips: [],
+      loaded:   false,
+      loading:  false,
 
-  refresh: async () => {
-    if (get().loading) return;
-    set({ loading: true });
-    try {
-      const [profileResp, payslips] = await Promise.all([
-        fetchProfile(),
-        fetchPayslips(),
-      ]);
-      const prof = profileResp.profile;
-      const latest = prof?.latest_salary ?? null;
+      refresh: async () => {
+        if (get().loading) return;
+        set({ loading: true });
+        try {
+          const [profileResp, payslips] = await Promise.all([
+            fetchProfile(),
+            fetchPayslips(),
+          ]);
+          const prof = profileResp.profile;
+          const latest = prof?.latest_salary ?? null;
 
-      const baseMonthly = num(latest?.basic_salary) || num(prof?.base_salary);
-      const details: SalaryDetails = {
-        baseMonthly,
-        otAllowance:      num(latest?.ot_allowance),
-        pfDeduction:      num(latest?.pf_employee),
-        advanceDeduction: num(latest?.advance_pay),
-        // Match the Suite's per-month required paid days (see helper above).
-        totalWorkingDays: currentCycleRequiredPaidDays(),
-      };
-      set({ details, payslips, loaded: true, loading: false });
-    } catch (err: any) {
-      // Surface the underlying error so a silent fetchProfile / fetchPayslips
-      // failure doesn't leave the dashboard quietly stuck on the all-zero
-      // defaults (which look identical to "real" zero earnings).
-      console.warn('[salaryStore.refresh] failed:', err?.message || err);
-      set({ loading: false });
-    }
-  },
+          const baseMonthly = num(latest?.basic_salary) || num(prof?.base_salary);
+          const details: SalaryDetails = {
+            baseMonthly,
+            otAllowance:      num(latest?.ot_allowance),
+            pfDeduction:      num(latest?.pf_employee),
+            advanceDeduction: num(latest?.advance_pay),
+            // Match the Suite's per-month required paid days (see helper above).
+            totalWorkingDays: currentCycleRequiredPaidDays(),
+          };
+          set({ details, payslips, loaded: true, loading: false });
+        } catch (err: any) {
+          // Surface the underlying error so a silent fetchProfile / fetchPayslips
+          // failure doesn't leave the dashboard quietly stuck on the all-zero
+          // defaults (which look identical to "real" zero earnings).
+          console.warn('[salaryStore.refresh] failed:', err?.message || err);
+          set({ loading: false });
+        }
+      },
 
-  getDailyRate: () => SalaryCalculationService.computeDailyRate(get().details),
-  getAttendanceEarnings: (presentCount: number) =>
-    SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
-  getNetPay: (presentCount: number) =>
-    SalaryCalculationService.computeNetPay(get().details, presentCount),
-}));
+      getDailyRate: () => SalaryCalculationService.computeDailyRate(get().details),
+      getAttendanceEarnings: (presentCount: number) =>
+        SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
+      getNetPay: (presentCount: number) =>
+        SalaryCalculationService.computeNetPay(get().details, presentCount),
+    }),
+    {
+      // Persist `details` and `payslips` so the Salary tab and dashboard
+      // earnings figures render the last-known values immediately on cold
+      // start, instead of flashing zeros until refresh() returns. `loading`
+      // and `loaded` are session-scoped and intentionally excluded.
+      name: 'salary-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        details:  state.details,
+        payslips: state.payslips,
+      }),
+    },
+  ),
+);
