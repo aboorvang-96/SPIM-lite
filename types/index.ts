@@ -43,6 +43,8 @@ export interface AttendanceRecord {
   status: 'Present' | 'Absent' | 'Leave' | 'Half Day' | 'Holiday' | 'Week Off' | 'No Week Off';
   timeIn?: string;
   timeOut?: string;
+  /** 'admin' when set by an admin via SPIM Suite; 'employee' when self-marked. */
+  source?: string;
 }
 
 export interface SalaryDetails {

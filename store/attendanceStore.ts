@@ -27,6 +27,8 @@ interface AttendanceState {
   ) => Promise<void>;
 
   getPresentCount: (startDate: string, endDate: string) => number;
+  /** Returns true when the record for dateStr was set by an admin (read-only). */
+  isAdminLocked: (dateStr: string) => boolean;
 }
 
 /**
@@ -44,8 +46,9 @@ function fromBackend(r: MobileAttendanceRecord): AttendanceRecord {
   };
 
   return {
-    date: r.date,
+    date:   r.date,
     status: map[r.status] ?? 'Absent',
+    source: r.source,
   };
 }
 
@@ -85,36 +88,44 @@ export const useAttendanceStore = create<AttendanceState>()(
         set({ loading: true });
 
         try {
-          // The SPIM Suite /api/mobile/attendance/ endpoint expects a
-          // ?month=YYYY-MM query parameter to scope the response. Without it
-          // the server returns nothing, which used to wipe today's locally
-          // marked status on every cold-start refresh — that is the bug
-          // observed where attendance "disappeared" after closing the app.
-          const month = format(new Date(), 'yyyy-MM');
-          const list = await fetchAttendance(month);
+          // Compute the current payroll cycle (26th prev month → 25th this month).
+          // If today > 25 the cycle started this month; otherwise last month.
+          const today = new Date();
+          const day   = today.getDate();
+          let cycleStartMonth = today.getMonth();    // 0-indexed
+          let cycleStartYear  = today.getFullYear();
+          if (day <= 25) {
+            cycleStartMonth -= 1;
+            if (cycleStartMonth < 0) { cycleStartMonth = 11; cycleStartYear -= 1; }
+          }
+          let cycleEndMonth = cycleStartMonth + 1;
+          let cycleEndYear  = cycleStartYear;
+          if (cycleEndMonth > 11) { cycleEndMonth = 0; cycleEndYear += 1; }
 
-          // Merge backend records into the existing map instead of replacing.
-          // Previously-hydrated months (loaded from AsyncStorage via the
-          // persist middleware below, or fetched on an earlier refresh) are
-          // preserved; the backend is authoritative for any date it returns.
+          const startMonthStr = `${cycleStartYear}-${String(cycleStartMonth + 1).padStart(2, '0')}`;
+          const endMonthStr   = `${cycleEndYear}-${String(cycleEndMonth + 1).padStart(2, '0')}`;
+
+          // The 26→25 cycle always spans two calendar months — fetch both.
+          const fetches = [fetchAttendance(startMonthStr)];
+          if (endMonthStr !== startMonthStr) {
+            fetches.push(fetchAttendance(endMonthStr));
+          }
+          const results = await Promise.all(fetches);
+          const list = results.flat();
+
+          // Merge into the existing map; backend is authoritative for any
+          // date it returns (including admin-set records).
           set((state) => {
             const recs: Record<string, AttendanceRecord> = { ...state.records };
             for (const r of list) {
               recs[r.date] = fromBackend(r);
             }
-            return {
-              records: recs,
-              loading: false,
-              loaded: true,
-            };
+            return { records: recs, loading: false, loaded: true };
           });
 
         } catch (error) {
           console.error('Attendance refresh failed:', error);
-
-          set({
-            loading: false,
-          });
+          set({ loading: false });
         }
       },
 
@@ -173,6 +184,8 @@ export const useAttendanceStore = create<AttendanceState>()(
 
         return count;
       },
+
+      isAdminLocked: (dateStr) => get().records[dateStr]?.source === 'admin',
     }),
     {
       // Persist `records` across app restarts so today's marked attendance

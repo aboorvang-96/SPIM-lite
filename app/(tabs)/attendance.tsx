@@ -4,7 +4,7 @@ import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput }
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import MachineLogPopup from '../../components/attendance/MachineLogPopup';
 import { AttendanceRecord } from '../../types';
 
@@ -15,6 +15,7 @@ export default function AttendanceScreen() {
   const records = useAttendanceStore(state => state.records);
   const markAttendance = useAttendanceStore(state => state.markAttendance);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
+  const isAdminLocked  = useAttendanceStore(state => state.isAdminLocked);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
   // Subscribe to logs so the "Today's Machine" chip re-renders when
@@ -28,6 +29,7 @@ export default function AttendanceScreen() {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
   const currentRecord = records[todayStr];
+  const adminLocked   = isAdminLocked(todayStr);
 
   // Pre-fill the dropdown with the currently saved status (if any) so the
   // employee can change it; otherwise keep the default 'Present'.
@@ -62,6 +64,17 @@ export default function AttendanceScreen() {
   // Roughly days so far in cycle (excluding Sundays realistically, but simplistic for now)
   const totalDaysSoFar = Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const absentCount = totalDaysSoFar > 0 ? Math.max(0, totalDaysSoFar - presentCount) : 0;
+
+  // All dates in the current cycle, most recent first, for the history card.
+  const cycleDates: Date[] = (() => {
+    const dates: Date[] = [];
+    let cur = new Date(today.getTime());
+    while (cur >= cycleStart) {
+      dates.push(new Date(cur));
+      cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
+    }
+    return dates;
+  })();
 
   // Business rule: machine work is only displayed when today's attendance
   // status is 'Present' or 'Half Day'. Hide otherwise without deleting the
@@ -112,54 +125,62 @@ export default function AttendanceScreen() {
           </View>
         )}
 
-        {/* Status dropdown — always available so the employee can mark or
-            change today's status (Present / Leave / Holiday / Half Day). */}
+        {/* Edit controls — hidden and replaced with a lock label when today's
+            record was set by an admin. Employee records remain editable. */}
         <View style={{ width: '100%' }}>
           {!currentRecord && (
             <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
               Not Marked
             </Text>
           )}
-          <Menu
-            visible={statusMenuVisible}
-            onDismiss={() => setStatusMenuVisible(false)}
-            anchor={
-              <TextInput
-                mode="outlined"
-                value={selectedStatus}
-                editable={false}
-                label="Status"
-                right={
-                  <TextInput.Icon
-                    icon={statusMenuVisible ? 'menu-up' : 'menu-down'}
-                    onPress={() => setStatusMenuVisible(true)}
+          {adminLocked ? (
+            <Chip icon="lock" style={{ alignSelf: 'center', marginTop: 8, backgroundColor: '#F3F4F6' }}>
+              Set by Admin
+            </Chip>
+          ) : (
+            <>
+              <Menu
+                visible={statusMenuVisible}
+                onDismiss={() => setStatusMenuVisible(false)}
+                anchor={
+                  <TextInput
+                    mode="outlined"
+                    value={selectedStatus}
+                    editable={false}
+                    label="Status"
+                    right={
+                      <TextInput.Icon
+                        icon={statusMenuVisible ? 'menu-up' : 'menu-down'}
+                        onPress={() => setStatusMenuVisible(true)}
+                      />
+                    }
+                    onPressIn={() => setStatusMenuVisible(true)}
+                    dense
                   />
                 }
-                onPressIn={() => setStatusMenuVisible(true)}
-                dense
-              />
-            }
-            contentStyle={{ backgroundColor: theme.colors.surface }}
-          >
-            {ATTENDANCE_STATUS_OPTIONS.map(opt => (
-              <Menu.Item
-                key={opt}
-                title={opt}
-                onPress={() => {
-                  setSelectedStatus(opt);
-                  setStatusMenuVisible(false);
-                }}
-              />
-            ))}
-          </Menu>
-          <Button
-            mode="contained"
-            icon="hand-wave"
-            onPress={handleMarkAttendance}
-            style={{ borderRadius: 8, paddingVertical: 8, marginTop: 16 }}
-          >
-            {currentRecord ? 'Update Status' : 'Mark Attendance'}
-          </Button>
+                contentStyle={{ backgroundColor: theme.colors.surface }}
+              >
+                {ATTENDANCE_STATUS_OPTIONS.map(opt => (
+                  <Menu.Item
+                    key={opt}
+                    title={opt}
+                    onPress={() => {
+                      setSelectedStatus(opt);
+                      setStatusMenuVisible(false);
+                    }}
+                  />
+                ))}
+              </Menu>
+              <Button
+                mode="contained"
+                icon="hand-wave"
+                onPress={handleMarkAttendance}
+                style={{ borderRadius: 8, paddingVertical: 8, marginTop: 16 }}
+              >
+                {currentRecord ? 'Update Status' : 'Mark Attendance'}
+              </Button>
+            </>
+          )}
         </View>
       </Surface>
 
@@ -183,28 +204,24 @@ export default function AttendanceScreen() {
       </View>
 
       <Card style={styles.historyCard} mode="elevated" elevation={1}>
-        <Card.Title title="Recent History" titleStyle={{ color: theme.colors.secondary, fontWeight: 'bold' }} />
+        <Card.Title title="Cycle History" titleStyle={{ color: theme.colors.secondary, fontWeight: 'bold' }} />
         <Card.Content>
-          {[0, 1, 2, 3, 4, 5, 6].map(dayOffset => {
-            const date = subDays(today, dayOffset);
+          {cycleDates.map((date, idx) => {
             const dateStr = format(date, 'yyyy-MM-dd');
             const rec = records[dateStr];
-            const isWeekend = date.getDay() === 0; // Sunday
-            
+            const statusColor = (rec?.status === 'Present' || rec?.status === 'Week Off')
+              ? (theme.colors as any).success
+              : (!rec ? '#999' : theme.colors.error);
             return (
               <View key={dateStr}>
                 <View style={styles.historyRow}>
                   <Text variant="bodyLarge" style={{ width: 100 }}>{format(date, 'dd MMM')}</Text>
-                  <Text variant="bodyLarge" style={{ 
-                    flex: 1, 
-                    fontWeight: 'bold',
-                    color: rec?.status === 'Present' ? (theme.colors as any).success : (isWeekend ? '#999' : theme.colors.error)
-                  }}>
-                    {rec ? rec.status : (isWeekend ? 'Weekend' : 'Absent')}
+                  <Text variant="bodyLarge" style={{ flex: 1, fontWeight: 'bold', color: statusColor }}>
+                    {rec ? rec.status : '—'}
                   </Text>
                   <Text variant="bodyMedium" style={{ color: '#666' }}>{rec?.timeIn || '--:--'}</Text>
                 </View>
-                {dayOffset < 6 && <Divider style={{ marginVertical: 8 }} />}
+                {idx < cycleDates.length - 1 && <Divider style={{ marginVertical: 8 }} />}
               </View>
             );
           })}
