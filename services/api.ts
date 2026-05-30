@@ -304,7 +304,7 @@ export interface MobileAttendanceRecord {
 export async function fetchAttendance(month?: string): Promise<MobileAttendanceRecord[]> {
   const qs = month ? `?month=${encodeURIComponent(month)}` : '';
   const data: any = await apiGet(`/api/mobile/attendance/${qs}`);
-  const list: any[] = Array.isArray(data) ? data : data?.records || data?.results || [];
+  const list: any[] = Array.isArray(data) ? data : data?.attendance || data?.records || data?.results || [];
   return list
     .filter(r => ['present', 'absent', 'half_day', 'leave', 'week_off', 'no_week_off', 'holiday'].includes(r.status))
     .map(r => ({
