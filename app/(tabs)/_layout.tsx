@@ -30,9 +30,10 @@ export default function TabsLayout() {
   useEffect(() => {
     if (!isAuthenticated) return;
     refreshEmployee();
-    refreshAttendance();
-    refreshSalary();
     loadMachines();
+    refreshAttendance().then(() => {
+      refreshSalary();
+    });
   }, [isAuthenticated, refreshEmployee, refreshAttendance, refreshSalary, loadMachines]);
 
   useEffect(() => {

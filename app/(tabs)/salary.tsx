@@ -16,6 +16,8 @@ export default function SalaryScreen() {
   const employeeError = useEmployeeStore(state => state.error);
   const refreshEmployee = useEmployeeStore(state => state.refresh);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
+  const _attendanceRecords = useAttendanceStore(state => state.records);
+  void _attendanceRecords;
   const salaryDetails = useSalaryStore(state => state.details);
   const payslips = useSalaryStore(state => state.payslips);
   const getAttendanceEarnings = useSalaryStore(state => state.getAttendanceEarnings);

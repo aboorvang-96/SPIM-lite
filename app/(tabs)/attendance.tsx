@@ -16,7 +16,6 @@ export default function AttendanceScreen() {
   const records = useAttendanceStore(state => state.records);
   const markAttendance = useAttendanceStore(state => state.markAttendance);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
-  const isAdminLocked  = useAttendanceStore(state => state.isAdminLocked);
   const refresh = useAttendanceStore(state => state.refresh);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
@@ -27,14 +26,10 @@ export default function AttendanceScreen() {
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
-  // When today's attendance is already saved, the dropdown + button are
-  // hidden by default and the user clicks "Change" to reveal them.
-  const [showChangeDropdown, setShowChangeDropdown] = useState(false);
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
   const currentRecord = records[todayStr];
-  const adminLocked   = isAdminLocked(todayStr);
 
   useFocusEffect(
     useCallback(() => {
@@ -123,8 +118,6 @@ export default function AttendanceScreen() {
     // Task 6: mark attendance and stop. Machine log is a separate action
     // the employee performs deliberately from the Machines tab.
     markAttendance(todayStr, selectedStatus);
-    // Collapse the dropdown back so the saved state is the default view.
-    setShowChangeDropdown(false);
   };
 
   const handleOpenMachineLog = () => setMachinePopupVisible(true);
@@ -139,12 +132,12 @@ export default function AttendanceScreen() {
         </Text>
         
         {currentRecord && (
-          <View style={[styles.statusBox, { marginBottom: 16 }]}>
-            <Text variant="headlineSmall" style={{ color: (theme.colors as any).success, fontWeight: 'bold' }}>
+          <View style={[styles.statusBox, { marginBottom: 16, backgroundColor: '#F3F4F6' }]}>
+            <Text variant="headlineSmall" style={{ color: '#9CA3AF', fontWeight: 'bold' }}>
               {currentRecord.status}
             </Text>
             {currentRecord.timeIn ? (
-              <Text variant="bodyLarge">Time In: {currentRecord.timeIn}</Text>
+              <Text variant="bodyLarge" style={{ color: '#9CA3AF' }}>Time In: {currentRecord.timeIn}</Text>
             ) : null}
             <View style={styles.machineRow}>
               {assignedMachine ? (
@@ -159,32 +152,19 @@ export default function AttendanceScreen() {
           </View>
         )}
 
-        {/* Edit controls — hidden and replaced with a lock label when today's
-            record was set by an admin. Employee records remain editable. */}
+        {/* When attendance exists (any source) → locked grey indicator.
+            Employee cannot change once marked; only admin can via SPIM Suite.
+            When no record yet → show dropdown + Mark Attendance button. */}
         <View style={{ width: '100%' }}>
-          {!currentRecord && (
-            <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
-              Not Marked
-            </Text>
-          )}
-          {adminLocked ? (
-            <Chip icon="lock" style={{ alignSelf: 'center', marginTop: 8, backgroundColor: '#F3F4F6' }}>
-              Set by Admin
-            </Chip>
-          ) : currentRecord && !showChangeDropdown ? (
-            // Attendance is already saved — keep the dropdown collapsed so the
-            // green status box is the visible source of truth. A small text
-            // button lets the employee opt-in to changing it.
-            <Button
-              mode="text"
-              compact
-              onPress={() => setShowChangeDropdown(true)}
-              style={{ alignSelf: 'center', marginTop: 4 }}
-            >
-              Change
-            </Button>
+          {currentRecord ? (
+            <View style={styles.recordedBox}>
+              <Text variant="bodyMedium" style={{ color: '#9CA3AF' }}>Attendance recorded ✓</Text>
+            </View>
           ) : (
             <>
+              <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
+                Not Marked
+              </Text>
               <Menu
                 visible={statusMenuVisible}
                 onDismiss={() => setStatusMenuVisible(false)}
@@ -223,7 +203,7 @@ export default function AttendanceScreen() {
                 onPress={handleMarkAttendance}
                 style={{ borderRadius: 8, paddingVertical: 8, marginTop: 16 }}
               >
-                {currentRecord ? 'Update Status' : 'Mark Attendance'}
+                Mark Attendance
               </Button>
             </>
           )}
@@ -353,6 +333,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 4,
+  },
+  recordedBox: {
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    width: '100%',
+    marginTop: 4,
   },
   machineRow: {
     flexDirection: 'row',

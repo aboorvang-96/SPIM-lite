@@ -324,7 +324,7 @@ export async function postAttendance(
   const r = data?.record || data;
   return {
     id:     Number(r?.id ?? 0),
-    date:   str(r?.date ?? date),
+    date:   str(r?.date ?? date).slice(0, 10),
     status: (r?.status ?? status) as MobileAttendanceRecord['status'],
     source: str(r?.source ?? 'employee'),
   };

@@ -143,11 +143,11 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     // the tab mounts, even on a slow or offline cold start. It also prevents
     // the zustand-persist race where the API response could be overwritten
     // by a late rehydration event.
-    if (Object.keys(get().records).length === 0) {
-      const stored = await loadPersistedRecords();
-      if (Object.keys(stored).length > 0) {
-        set({ records: stored });
-      }
+    const stored = await loadPersistedRecords();
+    if (Object.keys(stored).length > 0) {
+      set((state) => ({
+        records: { ...stored, ...state.records },
+      }));
     }
 
     // ── Step 2: fetch full payroll cycle from the network ────────────────
@@ -187,8 +187,11 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       if (prevMonthStr !== startMonthStr && prevMonthStr !== endMonthStr) {
         fetches.push(fetchAttendance(prevMonthStr));
       }
+      console.log('[Attendance] Fetching months:', { prevMonthStr, startMonthStr, endMonthStr });
       const results = await Promise.all(fetches);
+      console.log('[Attendance] Records per fetch:', results.map(r => r.length));
       const list    = results.flat();
+      console.log('[Attendance] Total records from API:', list.length);
 
       // ── Step 3: merge (backend is authoritative for returned dates) ───
       set((state) => {
@@ -200,6 +203,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       });
 
       // ── Step 5: write the merged result back to AsyncStorage ─────────
+      console.log('[Attendance] Total records in map after merge:', Object.keys(get().records).length);
       saveRecords(get().records);
 
     } catch (error) {
@@ -226,17 +230,6 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
           [date]: markedRecord,
         },
       }));
-
-      // Re-apply the marked record after any in-flight refresh completes,
-      // preventing a concurrent fetch from overwriting the just-marked status.
-      setTimeout(() => {
-        const current = get().records[date];
-        if (!current || current.source !== 'admin') {
-          set((state) => ({
-            records: { ...state.records, [date]: markedRecord },
-          }));
-        }
-      }, 1500);
 
       // Await the write so the data is guaranteed on disk before this
       // function returns — survives an immediate app close after marking.
