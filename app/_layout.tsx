@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { theme } from '../constants/theme';
@@ -20,6 +21,17 @@ export default function RootLayout() {
   // Rehydrate any Supabase session AsyncStorage already holds so a returning
   // user lands on the tab tree instead of bouncing back to login.
   useEffect(() => { restoreSession(); }, [restoreSession]);
+
+  // Register the PWA service worker on web so Safari "Add to Home Screen"
+  // installs work and static assets are cached for offline resilience.
+  useEffect(() => {
+    if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
+      (navigator as any).serviceWorker
+        .register('/sw.js')
+        .then(() => console.log('SW registered'))
+        .catch((err: unknown) => console.log('SW error:', err));
+    }
+  }, []);
 
   return (
     <SafeAreaProvider>

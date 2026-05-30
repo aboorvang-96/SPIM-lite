@@ -30,7 +30,16 @@
     },
 
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static",
+      "name": "SPIM Lite",
+      "shortName": "SPIM",
+      "description": "SPIM Lite - Employee Portal",
+      "themeColor": "#1a2f5e",
+      "backgroundColor": "#0a1628",
+      "display": "standalone",
+      "orientation": "portrait"
     },
 
     "plugins": [
