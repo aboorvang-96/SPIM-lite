@@ -79,7 +79,7 @@ export default function AttendanceScreen() {
   const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
   // Roughly days so far in cycle (excluding Sundays realistically, but simplistic for now)
   const totalDaysSoFar = Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const absentCount = totalDaysSoFar > 0 ? Math.max(0, totalDaysSoFar - presentCount) : 0;
+  const absentCount = totalDaysSoFar > 0 ? Math.max(0, Math.round(totalDaysSoFar - presentCount)) : 0;
 
   // All dates in the current cycle, most recent first, for the history card.
   const cycleDates: Date[] = (() => {
