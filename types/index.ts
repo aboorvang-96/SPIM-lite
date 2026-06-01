@@ -53,6 +53,10 @@ export interface SalaryDetails {
   pfDeduction: number;
   advanceDeduction: number;
   totalWorkingDays: number;
+  netSalary?: number;
+  cycleStart?: string;
+  cycleEnd?: string;
+  paidDays?: number;
 }
 
 /**

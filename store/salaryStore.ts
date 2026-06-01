@@ -58,6 +58,10 @@ const DEFAULT_DETAILS: SalaryDetails = {
   pfDeduction:      0,
   advanceDeduction: 0,
   totalWorkingDays: currentCycleRequiredPaidDays(),
+  netSalary:        0,
+  cycleStart:       '',
+  cycleEnd:         '',
+  paidDays:         0,
 };
 
 function num(v: string | null | undefined): number {
@@ -79,10 +83,18 @@ async function loadPersistedSalary(): Promise<{ details: SalaryDetails; payslips
     if (!raw) return { details: { ...DEFAULT_DETAILS }, payslips: [] };
     const parsed = JSON.parse(raw);
     if (typeof parsed === 'object' && parsed !== null) {
-      return {
+      const result = {
         details:  parsed.details  ?? { ...DEFAULT_DETAILS },
         payslips: parsed.payslips ?? [],
       };
+      // Clear stale cached values so the next successful API refresh
+      // overwrites them with real data instead of the old heuristic.
+      if (result.details.totalWorkingDays === 26 ||
+          result.details.totalWorkingDays === 24) {
+        result.details.totalWorkingDays = 0;
+        result.details.netSalary        = 0;
+      }
+      return result;
     }
     return { details: { ...DEFAULT_DETAILS }, payslips: [] };
   } catch {
@@ -126,12 +138,30 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
       if (!salaryResp.success) throw new Error(salaryResp.error || 'Salary fetch failed');
       const sal = salaryResp.salary;
 
+      const cycleStart = sal.cycle_start || '';
+      const cycleEnd   = sal.cycle_end   || '';
+
+      // Derive totalWorkingDays from the API's cycle boundaries instead of
+      // re-running the local month-length heuristic.
+      let totalWorkingDays = 30; // safe default
+      if (cycleStart && cycleEnd) {
+        const start = new Date(cycleStart);
+        const end   = new Date(cycleEnd);
+        totalWorkingDays = Math.round(
+          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+        ) + 1;
+      }
+
       const details: SalaryDetails = {
         baseMonthly:      num(sal.basic_salary),
         otAllowance:      num(sal.allowances),
         pfDeduction:      num(sal.deductions),
         advanceDeduction: 0,
-        totalWorkingDays: currentCycleRequiredPaidDays(),
+        totalWorkingDays,
+        netSalary:        num(sal.net_salary),
+        cycleStart,
+        cycleEnd,
+        paidDays:         Number(sal.paid_days ?? 0),
       };
 
       // Step 3: set new data into store
@@ -145,9 +175,18 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
     }
   },
 
-  getDailyRate: () => SalaryCalculationService.computeDailyRate(get().details),
+  getDailyRate: () => {
+    const d = get().details;
+    if (!d.totalWorkingDays) return 0;
+    return d.baseMonthly / d.totalWorkingDays;
+  },
   getAttendanceEarnings: (presentCount: number) =>
     SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
-  getNetPay: (presentCount: number) =>
-    SalaryCalculationService.computeNetPay(get().details, presentCount),
+  getNetPay: (_presentCount: number) => {
+    const d = get().details;
+    // Use the backend's pre-computed net salary when available.
+    if (d.netSalary && d.netSalary > 0) return d.netSalary;
+    // Fallback: local formula (used before first API response or on error).
+    return SalaryCalculationService.computeNetPay(d, _presentCount);
+  },
 }));
