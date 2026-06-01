@@ -260,6 +260,12 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const { records } = get();
     let count = 0;
     Object.values(records).forEach((record) => {
+      // Sundays are excluded from payable working days — mirrors the Suite
+      // salary module (employees/views.py::_compute_attendance_earnings,
+      // which calls .exclude(date__week_day=1)). An admin-overridden Sunday
+      // therefore does NOT inflate the present count here either, keeping
+      // the salary screen aligned with the eventual payslip.
+      if (new Date(record.date + 'T00:00:00').getDay() === 0) return;
       const isPaidDay =
         record.status === 'Present' ||
         record.status === 'Week Off';

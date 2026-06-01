@@ -235,6 +235,11 @@ export default function AttendanceScreen() {
           {cycleDates.map((date, idx) => {
             const dateStr = format(date, 'yyyy-MM-dd');
             const rec = records[dateStr];
+            // Sundays render as "Sunday" unless the admin has explicitly
+            // overridden the date in SPIM Suite (in which case rec.status
+            // wins). Sunday is display-only — never sent to the backend.
+            const isSundayCell = !rec && date.getDay() === 0;
+            const displayStatus = rec ? rec.status : (isSundayCell ? 'Sunday' : '—');
             const statusColor = (rec?.status === 'Present' || rec?.status === 'Week Off')
               ? (theme.colors as any).success
               : (!rec ? '#999' : theme.colors.error);
@@ -243,7 +248,7 @@ export default function AttendanceScreen() {
                 <View style={styles.historyRow}>
                   <Text variant="bodyLarge" style={{ width: 100 }}>{format(date, 'dd MMM')}</Text>
                   <Text variant="bodyLarge" style={{ flex: 1, fontWeight: 'bold', color: statusColor }}>
-                    {rec ? rec.status : '—'}
+                    {displayStatus}
                   </Text>
                   <Text variant="bodyMedium" style={{ color: '#666' }}>{rec?.timeIn || '--:--'}</Text>
                 </View>
@@ -264,6 +269,8 @@ export default function AttendanceScreen() {
           {prevCycleDates.map((date, idx) => {
             const dateStr = format(date, 'yyyy-MM-dd');
             const rec = records[dateStr];
+            const isSundayCell = !rec && date.getDay() === 0;
+            const displayStatus = rec ? rec.status : (isSundayCell ? 'Sunday' : '—');
             const statusColor = (rec?.status === 'Present' || rec?.status === 'Week Off')
               ? (theme.colors as any).success
               : (!rec ? '#999' : theme.colors.error);
@@ -272,7 +279,7 @@ export default function AttendanceScreen() {
                 <View style={styles.historyRow}>
                   <Text variant="bodyLarge" style={{ width: 100 }}>{format(date, 'dd MMM')}</Text>
                   <Text variant="bodyLarge" style={{ flex: 1, fontWeight: 'bold', color: statusColor }}>
-                    {rec ? rec.status : '—'}
+                    {displayStatus}
                   </Text>
                   <Text variant="bodyMedium" style={{ color: '#666' }}>{rec?.timeIn || '--:--'}</Text>
                 </View>

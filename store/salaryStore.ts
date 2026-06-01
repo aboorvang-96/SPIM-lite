@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SalaryDetails } from '../types';
 import { SalaryCalculationService } from '../services/salaryCalculationService';
-import { fetchProfile, fetchPayslips, MobilePayslip } from '../services/api';
+import { fetchSalary, fetchPayslips, MobilePayslip } from '../services/api';
 
 interface SalaryState {
   details: SalaryDetails;
@@ -118,20 +118,19 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
 
     // Step 2: fetch fresh data from API
     try {
-      const [profileResp, payslips] = await Promise.all([
-        fetchProfile(),
+      const [salaryResp, payslips] = await Promise.all([
+        fetchSalary(),
         fetchPayslips(),
       ]);
-      const prof = profileResp.profile;
-      const latest = prof?.latest_salary ?? null;
 
-      const baseMonthly = num(latest?.basic_salary) || num(prof?.base_salary);
+      if (!salaryResp.success) throw new Error(salaryResp.error || 'Salary fetch failed');
+      const sal = salaryResp.salary;
+
       const details: SalaryDetails = {
-        baseMonthly,
-        otAllowance:      num(latest?.ot_allowance),
-        pfDeduction:      num(latest?.pf_employee),
-        advanceDeduction: num(latest?.advance_pay),
-        // Match the Suite's per-month required paid days (see helper above).
+        baseMonthly:      num(sal.basic_salary),
+        otAllowance:      num(sal.allowances),
+        pfDeduction:      num(sal.deductions),
+        advanceDeduction: 0,
         totalWorkingDays: currentCycleRequiredPaidDays(),
       };
 

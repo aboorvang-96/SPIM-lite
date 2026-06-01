@@ -367,6 +367,33 @@ export async function fetchPayslips(): Promise<MobilePayslip[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Salary cycle summary (GET /api/mobile/salary/)
+// ---------------------------------------------------------------------------
+
+export async function fetchSalary(): Promise<any> {
+  try {
+    const data: any = await apiGet('/api/mobile/salary/');
+    const sal = data?.salary || data;
+    return {
+      success: true,
+      salary: {
+        net_salary:   str(sal.net_salary   ?? '0.00'),
+        basic_salary: str(sal.basic_salary ?? '0.00'),
+        allowances:   str(sal.allowances   ?? '0.00'),
+        deductions:   str(sal.deductions   ?? '0.00'),
+        paid_days:    Number(sal.paid_days    ?? 0),
+        present_days: Number(sal.present_days ?? 0),
+        absent_days:  Number(sal.absent_days  ?? 0),
+        cycle_start:  str(sal.cycle_start  ?? ''),
+        cycle_end:    str(sal.cycle_end    ?? ''),
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Worklogs (GET/POST /api/mobile/worklogs/)
 // ---------------------------------------------------------------------------
 
