@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput } from 'react-native-paper';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
@@ -16,6 +16,7 @@ export default function AttendanceScreen() {
   const records = useAttendanceStore(state => state.records);
   const markAttendance = useAttendanceStore(state => state.markAttendance);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
+  const getStatusCount  = useAttendanceStore(state => state.getStatusCount);
   const refresh = useAttendanceStore(state => state.refresh);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
@@ -26,6 +27,8 @@ export default function AttendanceScreen() {
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
+  const [presentExpanded, setPresentExpanded] = useState(false);
+  const [absentExpanded,  setAbsentExpanded]  = useState(false);
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -76,10 +79,23 @@ export default function AttendanceScreen() {
   const prevCycleStart = new Date(prevCycleStartYear, prevCycleStartMonth, 26);
   const prevCycleEnd   = new Date(cycleStartYear, cycleStartMonth, 25);
 
-  const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
-  // Roughly days so far in cycle (excluding Sundays realistically, but simplistic for now)
-  const totalDaysSoFar = Math.floor((today.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const absentCount = totalDaysSoFar > 0 ? Math.max(0, Math.round(totalDaysSoFar - presentCount)) : 0;
+  const cycleStartStr = format(cycleStart, 'yyyy-MM-dd');
+  const cycleEndStr   = format(cycleEnd,   'yyyy-MM-dd');
+  const yesterdayStr  = format(new Date(today.getTime() - 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+
+  const presentCount = getPresentCount(cycleStartStr, cycleEndStr);
+
+  // Present breakdown — each count is capped at today by getStatusCount internally.
+  const presentRaw   = getStatusCount('Present',  cycleStartStr, cycleEndStr);
+  const holidayCount = getStatusCount('Holiday',  cycleStartStr, cycleEndStr);
+  const weekOffCount = getStatusCount('Week Off', cycleStartStr, cycleEndStr);
+  const halfDayCount = getStatusCount('Half Day', cycleStartStr, cycleEndStr);
+
+  // Absent breakdown — capped at yesterday so today's unmarked day isn't counted.
+  const absentRaw      = getStatusCount('Absent',      cycleStartStr, yesterdayStr);
+  const leaveCount     = getStatusCount('Leave',       cycleStartStr, yesterdayStr);
+  const noWeekOffCount = getStatusCount('No Week Off', cycleStartStr, yesterdayStr);
+  const absentCount    = absentRaw + leaveCount + noWeekOffCount;
 
   // All dates in the current cycle, most recent first, for the history card.
   const cycleDates: Date[] = (() => {
@@ -218,15 +234,40 @@ export default function AttendanceScreen() {
       </Text>
 
       <View style={styles.statsRow}>
-        <Surface style={styles.statBox} elevation={1}>
-          <Text variant="displaySmall" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{presentCount}</Text>
-          <Text variant="labelLarge">Present</Text>
-        </Surface>
-        
-        <Surface style={styles.statBox} elevation={1}>
-          <Text variant="displaySmall" style={{ color: theme.colors.error, fontWeight: 'bold' }}>{absentCount}</Text>
-          <Text variant="labelLarge">Absent</Text>
-        </Surface>
+        <View style={{ flex: 0.48 }}>
+          <TouchableOpacity onPress={() => setPresentExpanded(e => !e)} activeOpacity={0.7}>
+            <Surface style={[styles.statBox, { flex: 1 }]} elevation={1}>
+              <Text variant="displaySmall" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{presentCount}</Text>
+              <Text variant="labelLarge">Present</Text>
+              <Text style={{ color: theme.colors.primary, fontSize: 12, marginTop: 4 }}>{presentExpanded ? '▲' : '▼'}</Text>
+            </Surface>
+          </TouchableOpacity>
+          {presentExpanded && (
+            <Surface style={styles.breakdownBox} elevation={1}>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Present: {presentRaw}d</Text>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Holiday: {holidayCount}d</Text>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Week Off: {weekOffCount}d</Text>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Half Day: {halfDayCount}d</Text>
+            </Surface>
+          )}
+        </View>
+
+        <View style={{ flex: 0.48 }}>
+          <TouchableOpacity onPress={() => setAbsentExpanded(e => !e)} activeOpacity={0.7}>
+            <Surface style={[styles.statBox, { flex: 1 }]} elevation={1}>
+              <Text variant="displaySmall" style={{ color: theme.colors.error, fontWeight: 'bold' }}>{absentCount}</Text>
+              <Text variant="labelLarge">Absent</Text>
+              <Text style={{ color: theme.colors.error, fontSize: 12, marginTop: 4 }}>{absentExpanded ? '▲' : '▼'}</Text>
+            </Surface>
+          </TouchableOpacity>
+          {absentExpanded && (
+            <Surface style={styles.breakdownBox} elevation={1}>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Absent: {absentRaw}d</Text>
+              <Text variant="labelSmall" style={styles.breakdownLine}>Leave: {leaveCount}d</Text>
+              <Text variant="labelSmall" style={styles.breakdownLine}>No Week Off: {noWeekOffCount}d</Text>
+            </Surface>
+          )}
+        </View>
       </View>
 
       <Card style={styles.historyCard} mode="elevated" elevation={1}>
@@ -361,5 +402,16 @@ const styles = StyleSheet.create({
   },
   machineChipMissing: {
     backgroundColor: '#FEE2E2',
+  },
+  breakdownBox: {
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 8,
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  breakdownLine: {
+    color: '#555',
+    marginBottom: 4,
   },
 });

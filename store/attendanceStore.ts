@@ -80,6 +80,8 @@ interface AttendanceState {
   ) => Promise<void>;
 
   getPresentCount: (startDate: string, endDate: string) => number;
+  /** Returns count of records with the given status in [startDate, endDate], capped at today. */
+  getStatusCount: (status: AttendanceRecord['status'], startDate: string, endDate: string) => number;
   /** Returns true when the record for dateStr was set by an admin (read-only). */
   isAdminLocked: (dateStr: string) => boolean;
 }
@@ -278,6 +280,18 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       } else if (record.status === 'Half Day') {
         count += 0.5;
       }
+    });
+    return count;
+  },
+
+  getStatusCount: (status, startDate, endDate) => {
+    const { records } = get();
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    let count = 0;
+    Object.values(records).forEach((record) => {
+      if (record.date < startDate || record.date > endDate) return;
+      if (record.date > todayStr) return;
+      if (record.status === status) count += 1;
     });
     return count;
   },

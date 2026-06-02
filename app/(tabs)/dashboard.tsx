@@ -8,6 +8,7 @@ import { useMachineStore } from '../../store/machineStore';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { formatINR } from '../../utils/currencyFormatter';
+import { isMachineLogRestricted } from '../../utils/permissions';
 
 export default function DashboardScreen() {
   const theme = useTheme();
@@ -66,6 +67,7 @@ export default function DashboardScreen() {
   const assignedMachine = (employee && machineDisplayAllowed)
     ? getMachineForEmployee(employee.id)
     : null;
+  const machineRestricted = isMachineLogRestricted(employee);
 
   if (!employee) {
     // Profile not yet hydrated. Distinguish in-flight refresh (spinner)
@@ -172,17 +174,19 @@ export default function DashboardScreen() {
             <IconButton icon="map-marker" size={24} iconColor={theme.colors.error} style={styles.iconMargin} />
             <Text variant="bodyLarge" style={{ flex: 1 }}>{employee.site}</Text>
           </View>
-          <View style={styles.machineRow}>
-            <View style={styles.row}>
-              <IconButton icon="cog-outline" size={20} iconColor={theme.colors.primary} style={styles.iconMargin} />
-              <Text variant="bodyMedium" style={{ color: '#666' }}>Today's Machine</Text>
+          {!machineRestricted && (
+            <View style={styles.machineRow}>
+              <View style={styles.row}>
+                <IconButton icon="cog-outline" size={20} iconColor={theme.colors.primary} style={styles.iconMargin} />
+                <Text variant="bodyMedium" style={{ color: '#666' }}>Today's Machine</Text>
+              </View>
+              {assignedMachine ? (
+                <Chip compact icon="check" style={{ backgroundColor: '#DCFCE7' }}>{assignedMachine}</Chip>
+              ) : (
+                <Chip compact icon="alert-circle-outline" style={{ backgroundColor: '#FEE2E2' }}>Not Logged</Chip>
+              )}
             </View>
-            {assignedMachine ? (
-              <Chip compact icon="check" style={{ backgroundColor: '#DCFCE7' }}>{assignedMachine}</Chip>
-            ) : (
-              <Chip compact icon="alert-circle-outline" style={{ backgroundColor: '#FEE2E2' }}>Not Logged</Chip>
-            )}
-          </View>
+          )}
         </Card.Content>
       </Card>
 
