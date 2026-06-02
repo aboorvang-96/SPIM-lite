@@ -259,8 +259,10 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   getPresentCount: (startDate, endDate) => {
     const { records } = get();
     let count = 0;
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
     Object.values(records).forEach((record) => {
       if (record.date < startDate || record.date > endDate) return;
+      if (record.date > todayStr) return;  // don't count future dates
       // Sundays are excluded from payable working days, mirroring the Suite's
       // salary module (employees/views.py::_compute_attendance_earnings uses
       // .exclude(date__week_day=1)) — EXCEPT when explicitly marked as Holiday,
