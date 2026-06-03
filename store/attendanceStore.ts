@@ -7,6 +7,7 @@ import {
   postAttendance,
   MobileAttendanceRecord,
 } from '../services/api';
+import { ApiError } from '../services/apiClient';
 
 // ---------------------------------------------------------------------------
 // Direct AsyncStorage persistence (mirrors the machineStore statusList pattern).
@@ -108,6 +109,7 @@ function fromBackend(r: MobileAttendanceRecord): AttendanceRecord {
     date:   r.date,
     status: map[r.status] ?? 'Absent',
     source: r.source,
+    locked: !!r.locked,
   };
 }
 
@@ -140,16 +142,13 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     set({ loading: true });
 
     // ── Step 1: show persisted data immediately ──────────────────────────
-    // Read directly from AsyncStorage before starting the network call.
-    // This guarantees the user sees their last-known attendance the moment
-    // the tab mounts, even on a slow or offline cold start. It also prevents
-    // the zustand-persist race where the API response could be overwritten
-    // by a late rehydration event.
+    // Populate the UI with last-known data while the network call is in
+    // flight so the employee sees something instantly on slow connections.
+    // This snapshot is replaced wholesale by the API response in Step 3 —
+    // it is never merged into or allowed to outlive the server reply.
     const stored = await loadPersistedRecords();
     if (Object.keys(stored).length > 0) {
-      set((state) => ({
-        records: { ...stored, ...state.records },
-      }));
+      set({ records: stored });
     }
 
     // ── Step 2: fetch full payroll cycle from the network ────────────────
@@ -195,18 +194,18 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
       const list    = results.flat();
       console.log('[Attendance] Total records from API:', list.length);
 
-      // ── Step 3: merge (backend is authoritative for returned dates) ───
-      set((state) => {
-        const recs: Record<string, AttendanceRecord> = { ...state.records };
-        for (const r of list) {
-          recs[r.date] = fromBackend(r);
-        }
-        return { records: recs, loading: false, loaded: true };
-      });
+      // ── Step 3: API is source of truth — replace records wholesale ────
+      // Never merge with local state. Any record not returned by the API
+      // is gone; stale optimistic writes do not survive a successful fetch.
+      const recs: Record<string, AttendanceRecord> = {};
+      for (const r of list) {
+        recs[r.date] = fromBackend(r);
+      }
+      console.log('[Attendance] Total records after API replace:', Object.keys(recs).length);
+      set({ records: recs, loading: false, loaded: true });
 
-      // ── Step 5: write the merged result back to AsyncStorage ─────────
-      console.log('[Attendance] Total records in map after merge:', Object.keys(get().records).length);
-      saveRecords(get().records);
+      // ── Step 4: persist exactly what the API returned ────────────────
+      saveRecords(recs);
 
     } catch (error) {
       console.error('Attendance refresh failed:', error);
@@ -233,28 +232,42 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
         },
       }));
 
-      // Await the write so the data is guaranteed on disk before this
-      // function returns — survives an immediate app close after marking.
+      // Await so the record is on disk before returning.
       await saveRecords(get().records);
 
-    } catch (error) {
-      console.error('Attendance update failed:', error);
+      // Requirement: fetch fresh after every mark action so the store
+      // reflects authoritative server state. Fire-and-forget — the POST
+      // is already confirmed; the GET runs in the background.
+      get().refresh();
 
-      // Optimistic fallback — show the employee's intent in the UI even
-      // if the network call failed; the next refresh will reconcile.
-      set((state) => ({
-        records: {
-          ...state.records,
-          [date]: {
-            date,
-            status,
-            timeIn: format(new Date(), 'HH:mm'),
-          },
-        },
-      }));
+    } catch (error: any) {
+      if (error instanceof ApiError && error.status === 409) {
+        // The server says this date is already locked. Replace local state
+        // with the authoritative record returned in the 409 body and lock
+        // the date so the mark UI is disabled.
+        const raw = error.body?.record || error.body;
+        if (raw && typeof raw === 'object' && raw.date) {
+          const lockedRecord: AttendanceRecord = fromBackend({
+            id:     Number(raw.id ?? 0),
+            date:   String(raw.date).slice(0, 10),
+            status: (raw.status ?? 'present') as MobileAttendanceRecord['status'],
+            source: String(raw.source ?? 'admin'),
+            locked: true,
+          });
+          set((state) => ({
+            records: { ...state.records, [date]: lockedRecord },
+          }));
+          await saveRecords(get().records);
+          // Refresh all dates to stay in sync after the 409.
+          get().refresh();
+        }
+        return;
+      }
 
-      // Also await so the optimistic record is on disk before returning.
-      await saveRecords(get().records);
+      // Network or other server error: POST did not reach the server.
+      // Do not write any local state — API is the only source of truth.
+      // The mark UI remains visible so the employee can retry.
+      console.error('Attendance mark failed:', error);
     }
   },
 

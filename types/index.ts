@@ -45,6 +45,8 @@ export interface AttendanceRecord {
   timeOut?: string;
   /** 'admin' when set by an admin via SPIM Suite; 'employee' when self-marked. */
   source?: string;
+  /** true when the server has locked this record and the employee may not re-mark it. */
+  locked?: boolean;
 }
 
 export interface SalaryDetails {

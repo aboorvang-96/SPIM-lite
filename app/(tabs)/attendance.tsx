@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, AppState } from 'react-native';
 import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput } from 'react-native-paper';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
@@ -39,6 +39,17 @@ export default function AttendanceScreen() {
       refresh();
     }, [refresh])
   );
+
+  // Refresh when the app returns to the foreground (e.g. iOS PWA resume).
+  // useFocusEffect does not re-fire when the screen is already focused and
+  // the app goes to background then returns, so an explicit AppState
+  // listener is required to satisfy the "fetch on resume" requirement.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
 
   // Pre-fill the dropdown with the currently saved status (if any) so the
   // employee can change it; otherwise keep the default 'Present'.
@@ -172,15 +183,17 @@ export default function AttendanceScreen() {
             Employee cannot change once marked; only admin can via SPIM Suite.
             When no record yet → show dropdown + Mark Attendance button. */}
         <View style={{ width: '100%' }}>
-          {currentRecord ? (
+          {currentRecord?.locked ? (
             <View style={styles.recordedBox}>
               <Text variant="bodyMedium" style={{ color: '#9CA3AF' }}>Attendance recorded ✓</Text>
             </View>
           ) : (
             <>
-              <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
-                Not Marked
-              </Text>
+              {!currentRecord && (
+                <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
+                  Not Marked
+                </Text>
+              )}
               <Menu
                 visible={statusMenuVisible}
                 onDismiss={() => setStatusMenuVisible(false)}

@@ -299,6 +299,8 @@ export interface MobileAttendanceRecord {
   date: string;
   status: 'present' | 'absent' | 'half_day' | 'leave';
   source: string;
+  /** Server-side lock flag — employee may not re-mark when true. */
+  locked?: boolean;
 }
 
 export async function fetchAttendance(month?: string): Promise<MobileAttendanceRecord[]> {
@@ -312,6 +314,7 @@ export async function fetchAttendance(month?: string): Promise<MobileAttendanceR
       date:   str(r.date).slice(0, 10),
       status: r.status as MobileAttendanceRecord['status'],
       source: str(r.source),
+      locked: !!r.locked,
     }));
 }
 
