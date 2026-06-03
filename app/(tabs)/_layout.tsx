@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Platform, Text } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useTheme } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -56,54 +57,72 @@ export default function TabsLayout() {
         name="dashboard"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>📊</Text>
+            ) : (
+              <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
+            ),
         }}
       />
       <Tabs.Screen
         name="attendance"
         options={{
           title: 'Attendance',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="calendar-check" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>📅</Text>
+            ) : (
+              <MaterialCommunityIcons name="calendar-check" size={size} color={color} />
+            ),
         }}
       />
       <Tabs.Screen
         name="machines"
         options={{
           title: 'Machines',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="cog-outline" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>⚙️</Text>
+            ) : (
+              <MaterialCommunityIcons name="cog-outline" size={size} color={color} />
+            ),
         }}
       />
       <Tabs.Screen
         name="salary"
         options={{
           title: 'Salary',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="cash-multiple" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>💰</Text>
+            ) : (
+              <MaterialCommunityIcons name="cash-multiple" size={size} color={color} />
+            ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>👤</Text>
+            ) : (
+              <MaterialCommunityIcons name="account" size={size} color={color} />
+            ),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="dots-horizontal" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 18, color }}>•••</Text>
+            ) : (
+              <MaterialCommunityIcons name="dots-horizontal" size={size} color={color} />
+            ),
         }}
       />
     </Tabs>

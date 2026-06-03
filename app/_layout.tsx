@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { Stack } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { theme } from '../constants/theme';
@@ -8,6 +8,38 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaxWidthWrapper from '../components/MaxWidthWrapper';
 import { useMachineStore } from '../store/machineStore';
 import { useAuthStore } from '../store/authStore';
+
+// Web fallback for react-native-paper icons. @expo/vector-icons fonts can
+// fail to render inside an iOS Safari PWA (icons show as empty checkboxes),
+// so on web we substitute emoji for the icon names actually used by Paper
+// components across the app. Native (iOS/Android) is untouched.
+const WEB_PAPER_ICONS: Record<string, string> = {
+  // login screen
+  domain: '🏢',
+  account: '👤',
+  lock: '🔒',
+  // dashboard / shared
+  refresh: '🔄',
+  'map-marker': '📍',
+  'map-marker-outline': '📍',
+  'phone-outline': '📞',
+  'email-outline': '✉️',
+  'cog-outline': '⚙️',
+  'calendar-check': '📅',
+  'cash-multiple': '💰',
+  'account-cog': '👤',
+  check: '✓',
+  // attendance
+  cog: '⚙️',
+  'alert-circle-outline': '⚠️',
+  pencil: '✏️',
+  'hand-wave': '👋',
+  // machines
+  calendar: '📆',
+  'content-save': '💾',
+  // profile
+  logout: '↩️',
+};
 
 export default function RootLayout() {
   const loadStatus = useMachineStore(state => state.loadStatus);
@@ -38,7 +70,19 @@ export default function RootLayout() {
       <PaperProvider
         theme={theme}
         settings={{
-          icon: props => <MaterialCommunityIcons {...props} />,
+          icon: (props: any) => {
+            if (Platform.OS === 'web') {
+              const emoji = WEB_PAPER_ICONS[props?.name];
+              if (emoji) {
+                return (
+                  <Text style={{ fontSize: props?.size ?? 20, color: props?.color, lineHeight: (props?.size ?? 20) + 2 }}>
+                    {emoji}
+                  </Text>
+                );
+              }
+            }
+            return <MaterialCommunityIcons {...props} />;
+          },
         }}
       >
         <MaxWidthWrapper>
