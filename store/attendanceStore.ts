@@ -26,7 +26,10 @@ import { ApiError } from '../services/apiClient';
 //   and write back immediately after every mutation.
 // ---------------------------------------------------------------------------
 
-const RECORDS_KEY = '@spim-lite/attendance-records/v1';
+// v2: bumped to abandon stale iOS AsyncStorage records written by the old
+// merge-not-replace code.  Old v1 data is silently orphaned; it is never
+// read again and will be cleared by the OS as part of normal storage hygiene.
+const RECORDS_KEY = '@spim-lite/attendance-records/v2';
 
 async function loadPersistedRecords(): Promise<Record<string, AttendanceRecord>> {
   try {
