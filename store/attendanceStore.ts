@@ -66,10 +66,21 @@ async function saveRecords(records: Record<string, AttendanceRecord>): Promise<v
 // Types
 // ---------------------------------------------------------------------------
 
+interface MarkResult {
+  success: boolean;
+  record?: AttendanceRecord;
+  /** Human-readable error message when success === false. */
+  error?: string;
+  /** true when the server returned 409 locked. */
+  locked?: boolean;
+}
+
 interface AttendanceState {
   records: Record<string, AttendanceRecord>; // Key is YYYY-MM-DD
   loading: boolean;
   loaded: boolean;
+  /** True while a markAttendance POST is in flight — UI disables the button. */
+  marking: boolean;
 
   /** Pull this employee's attendance from the SPIM Suite backend. */
   refresh: () => Promise<void>;
@@ -77,11 +88,14 @@ interface AttendanceState {
   /**
    * Mark attendance and persist to the backend.
    * Backend upserts on (employee, date).
+   * Resolves with a MarkResult describing the outcome — never throws.
    */
   markAttendance: (
     date: string,
-    status: AttendanceRecord['status']
-  ) => Promise<void>;
+    status: AttendanceRecord['status'],
+    site?: string,
+    workingSite?: string,
+  ) => Promise<MarkResult>;
 
   getPresentCount: (startDate: string, endDate: string) => number;
   /** Returns count of records with the given status in [startDate, endDate], capped at today. */
@@ -113,6 +127,8 @@ function fromBackend(r: MobileAttendanceRecord): AttendanceRecord {
     status: map[r.status] ?? 'Absent',
     source: r.source,
     locked: !!r.locked,
+    site:         r.site,
+    working_site: r.working_site,
   };
 }
 
@@ -139,6 +155,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   records: {},
   loading: false,
   loaded:  false,
+  marking: false,
 
   refresh: async () => {
     if (get().loading) return;
@@ -216,38 +233,54 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     }
   },
 
-  markAttendance: async (date, status) => {
+  markAttendance: async (date, status, site, workingSite) => {
+    // Guard: prevent duplicate concurrent POSTs (race condition where two
+    // taps fire before the first resolves).
+    if (get().marking) {
+      return { success: false, error: 'Already submitting — please wait.' };
+    }
+    set({ marking: true });
+
     try {
-      const saved = await postAttendance(
+      const response = await postAttendance(
         toBackendStatus(status),
         date,
+        site,
+        workingSite,
       );
 
+      // Sanity check: API must confirm success before we touch local state.
+      if (!response?.success || !response.record) {
+        set({ marking: false });
+        return { success: false, error: 'Server did not confirm save. Please try again.' };
+      }
+
       const markedRecord: AttendanceRecord = {
-        ...fromBackend(saved),
+        ...fromBackend(response.record),
         timeIn: format(new Date(), 'HH:mm'),
       };
 
       set((state) => ({
-        records: {
-          ...state.records,
-          [date]: markedRecord,
-        },
+        records: { ...state.records, [date]: markedRecord },
+        marking: false,
       }));
 
       // Await so the record is on disk before returning.
       await saveRecords(get().records);
 
       // Requirement: fetch fresh after every mark action so the store
-      // reflects authoritative server state. Fire-and-forget — the POST
-      // is already confirmed; the GET runs in the background.
+      // reflects authoritative server state.
       get().refresh();
 
+      return { success: true, record: markedRecord };
+
     } catch (error: any) {
+      set({ marking: false });
+
       if (error instanceof ApiError && error.status === 409) {
-        // The server says this date is already locked. Replace local state
-        // with the authoritative record returned in the 409 body and lock
-        // the date so the mark UI is disabled.
+        // The server says this date is already locked by admin. Replace
+        // local state with the authoritative record returned in the 409
+        // body and lock the date so the mark UI is disabled.
         const raw = error.body?.record || error.body;
         if (raw && typeof raw === 'object' && raw.date) {
           const lockedRecord: AttendanceRecord = fromBackend({
@@ -256,21 +289,31 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
             status: (raw.status ?? 'present') as MobileAttendanceRecord['status'],
             source: String(raw.source ?? 'admin'),
             locked: true,
+            site:         raw.site != null ? String(raw.site) : undefined,
+            working_site: raw.working_site != null ? String(raw.working_site) : undefined,
           });
           set((state) => ({
             records: { ...state.records, [date]: lockedRecord },
           }));
           await saveRecords(get().records);
-          // Refresh all dates to stay in sync after the 409.
           get().refresh();
         }
-        return;
+        return {
+          success: false,
+          locked: true,
+          error: 'Attendance already marked by admin',
+        };
       }
 
-      // Network or other server error: POST did not reach the server.
-      // Do not write any local state — API is the only source of truth.
-      // The mark UI remains visible so the employee can retry.
+      // Network / timeout / other server error: POST did not succeed.
+      // CRITICAL: do not write any local state — API is the only source
+      // of truth. Returning the error lets the UI surface it to the user.
       console.error('Attendance mark failed:', error);
+      const msg =
+        (error instanceof ApiError && (error.message || (error.body && (error.body.error || error.body.message || error.body.detail))))
+          || error?.message
+          || 'Failed to mark attendance. Please try again.';
+      return { success: false, error: String(msg) };
     }
   },
 

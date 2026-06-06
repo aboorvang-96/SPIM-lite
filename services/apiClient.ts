@@ -98,6 +98,8 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
    * where a 401 is expected (e.g. token verification probes).
    */
   skipAuthRedirect?: boolean;
+  /** Abort the request after this many milliseconds. */
+  timeoutMs?: number;
 }
 
 /**
@@ -110,6 +112,7 @@ export async function apiFetch(path: string, opts: ApiFetchOptions = {}): Promis
     rawBody,
     skipAuth = false,
     skipAuthRedirect = false,
+    timeoutMs,
     headers,
     ...rest
   } = opts;
@@ -136,7 +139,25 @@ export async function apiFetch(path: string, opts: ApiFetchOptions = {}): Promis
     if (token) finalHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, { ...rest, headers: finalHeaders, body });
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let signal = rest.signal;
+  if (timeoutMs && timeoutMs > 0) {
+    const controller = new AbortController();
+    timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+    signal = controller.signal;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...rest, headers: finalHeaders, body, signal });
+  } catch (err: any) {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (err?.name === 'AbortError') {
+      throw new ApiError('Network timeout - please try again', 0, null);
+    }
+    throw new ApiError(err?.message || 'Network error', 0, null);
+  }
+  if (timeoutHandle) clearTimeout(timeoutHandle);
 
   if (res.status === 401 && !skipAuthRedirect && !skipAuth) {
     await clearAuthToken();

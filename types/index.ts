@@ -47,6 +47,8 @@ export interface AttendanceRecord {
   source?: string;
   /** true when the server has locked this record and the employee may not re-mark it. */
   locked?: boolean;
+  site?: string;
+  working_site?: string;
 }
 
 export interface SalaryDetails {
