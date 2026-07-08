@@ -76,8 +76,23 @@ function shiftCycle(cycle: Cycle, months: number): Cycle {
 
 function friendlyError(err: any): string {
   if (err instanceof ApiError) {
+    // Prefer the actual server-provided message when present. This avoids
+    // masking real errors (e.g. tenant/admin_id issues, missing employee)
+    // with a generic client-side hint.
+    const body = err.body;
+    if (body && typeof body === 'object') {
+      const serverMsg =
+        (body.error || body.message || body.detail) ?? null;
+      if (typeof serverMsg === 'string' && serverMsg.length > 0) return serverMsg;
+    }
+    // If the body is a raw HTML string, the endpoint URL almost certainly
+    // isn't registered on the deployed Suite — surface that specifically
+    // instead of a misleading "employee missing" line.
+    if (typeof body === 'string' && body.includes('<html')) {
+      return 'This HR endpoint is not available on the connected Suite server. Please deploy the latest Suite backend.';
+    }
     if (err.status === 403) return 'You do not have HR permission for this data.';
-    if (err.status === 404) return 'Employee not found. They may have been removed.';
+    if (err.status === 404) return 'Requested data was not found (HTTP 404).';
     if (err.status === 401) return 'Session expired. Please sign in again.';
     if (err.status >= 500) return 'Server error. Please try again in a moment.';
   }

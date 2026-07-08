@@ -7,10 +7,17 @@ import { ApiError } from '../../../services/apiClient';
 
 function friendlyError(err: any): string {
   if (err instanceof ApiError) {
+    const body = err.body;
+    if (body && typeof body === 'object') {
+      const serverMsg = (body.error || body.message || body.detail) ?? null;
+      if (typeof serverMsg === 'string' && serverMsg.length > 0) return serverMsg;
+    }
+    if (typeof body === 'string' && body.includes('<html')) {
+      return 'This HR endpoint is not available on the connected Suite server. Please deploy the latest Suite backend.';
+    }
     if (err.status === 403) return 'You do not have HR permission for this action.';
     if (err.status === 401) return 'Session expired. Please sign in again.';
     if (err.status >= 500) return 'Server error. Please try again in a moment.';
-    if (err.status === 400 && err.body?.message) return String(err.body.message);
   }
   return err?.message || 'Something went wrong.';
 }

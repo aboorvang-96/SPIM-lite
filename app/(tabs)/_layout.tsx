@@ -9,6 +9,7 @@ import { useAttendanceStore } from '../../store/attendanceStore';
 import { useSalaryStore } from '../../store/salaryStore';
 import { useMachineStore } from '../../store/machineStore';
 import SpimHeader from '../../components/ui/SpimHeader';
+import { isHrUser } from '../../utils/permissions';
 
 export default function TabsLayout() {
   const theme = useTheme();
@@ -27,6 +28,11 @@ export default function TabsLayout() {
   // Machine Work" card and dashboard chip would appear empty after a reload
   // even though the row is persisted in projects_worklog.
   const employeeUid = useEmployeeStore(s => s.employee?.id);
+  // HR users see an "HR Panel" tab in the same bottom-nav position that
+  // "More" occupies for everyone else — no seventh tab, no intermediate
+  // route. Non-HR users see the existing "More" tab unchanged.
+  const employee = useEmployeeStore(s => s.employee);
+  const hr = isHrUser(employee);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -117,11 +123,31 @@ export default function TabsLayout() {
         name="more"
         options={{
           title: 'More',
+          // Hide "More" from the bottom tab bar for HR users. The tab file
+          // stays registered so the route still resolves for anything that
+          // deep-links to /(tabs)/more — but non-HR users are the only
+          // group who see it in the tab bar.
+          href: hr ? null : '/(tabs)/more',
           tabBarIcon: ({ color, size }) =>
             Platform.OS === 'web' ? (
               <Text style={{ fontSize: 18, color }}>•••</Text>
             ) : (
               <MaterialCommunityIcons name="dots-horizontal" size={size} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="hr-panel"
+        options={{
+          title: 'HR Panel',
+          // Only HR users see this tab in the bottom bar. Non-HR users
+          // still have the route registered but it stays hidden.
+          href: hr ? '/(tabs)/hr-panel' : null,
+          tabBarIcon: ({ color, size }) =>
+            Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, color }}>🛡️</Text>
+            ) : (
+              <MaterialCommunityIcons name="shield-account" size={size} color={color} />
             ),
         }}
       />
