@@ -20,3 +20,23 @@ export function isMachineLogRestricted(employee: Employee | null | undefined): b
     .map(v => (v || '').trim().toLowerCase());
   return fields.some(field => RESTRICTED_KEYWORDS.some(k => field.includes(k)));
 }
+
+/**
+ * HR gate for the SPIM Lite More → HR Panel entry and every /hr/* route.
+ *
+ * Independent of isMachineLogRestricted() by design — the two features
+ * must not share code so a future change to one cannot silently alter
+ * the other. Detection mirrors the same substring pattern: scan the
+ * same fields (role / level / department) for the 'hr' keyword only.
+ *
+ * `employee.role` is populated from the SPIM Suite profile's
+ * `designation` (see store/employeeStore.ts), so labels like
+ * "HR Manager" or "HR Executive" are covered without needing a
+ * separate designation field on the Employee type.
+ */
+export function isHrUser(employee: Employee | null | undefined): boolean {
+  if (!employee) return false;
+  const fields = [employee.role, employee.level, employee.department]
+    .map(v => (v || '').trim().toLowerCase());
+  return fields.some(field => field.includes('hr'));
+}
