@@ -1,16 +1,31 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text } from 'react-native-paper';
-import { Stack } from 'expo-router';
+import { List, Text } from 'react-native-paper';
+import { Stack, useRouter } from 'expo-router';
 
 export default function HrHomeScreen() {
+  const router = useRouter();
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'HR Panel' }} />
-      <Text variant="titleLarge">HR Panel</Text>
-      <Text style={styles.body}>
-        HR tools will appear here. Income, Expense and Reports are not yet available.
-      </Text>
+      <Text variant="titleLarge" style={styles.heading}>HR Panel</Text>
+      <List.Section>
+        <List.Item
+          title="Attendance Viewer"
+          description="View any employee's attendance"
+          left={props => <List.Icon {...props} icon="calendar-search" />}
+          right={props => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => router.push('/hr/attendance')}
+        />
+        <List.Item
+          title="Income Management"
+          description="View, add, edit, delete income"
+          left={props => <List.Icon {...props} icon="cash-plus" />}
+          right={props => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => router.push('/hr/income')}
+        />
+      </List.Section>
     </View>
   );
 }
@@ -18,13 +33,10 @@ export default function HrHomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    padding: 8,
   },
-  body: {
-    textAlign: 'center',
-    marginTop: 12,
-    color: '#666',
+  heading: {
+    fontWeight: 'bold',
+    padding: 12,
   },
 });
