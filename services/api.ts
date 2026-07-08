@@ -305,22 +305,6 @@ export interface MobileAttendanceRecord {
   working_site?: string;
 }
 
-export interface MobileSitesResponse {
-  success: boolean;
-  sites: string[];
-  default: string;
-}
-
-export async function fetchSites(): Promise<MobileSitesResponse> {
-  const data: any = await apiGet('/api/mobile/sites/');
-  const list: any[] = Array.isArray(data?.sites) ? data.sites : [];
-  return {
-    success: !!data?.success,
-    sites: list.map(s => str(s)).filter(s => s.length > 0),
-    default: str(data?.default),
-  };
-}
-
 export async function fetchAttendance(month?: string): Promise<MobileAttendanceRecord[]> {
   const qs = month ? `?month=${encodeURIComponent(month)}` : '';
   const data: any = await apiGet(`/api/mobile/attendance/${qs}`);
@@ -336,40 +320,6 @@ export async function fetchAttendance(month?: string): Promise<MobileAttendanceR
       site:         r.site != null ? str(r.site) : undefined,
       working_site: r.working_site != null ? str(r.working_site) : undefined,
     }));
-}
-
-export async function postAttendance(
-  status: 'present' | 'absent' | 'half_day' | 'leave' | 'week_off' | 'no_week_off' | 'holiday',
-  dateISO?: string,
-  site?: string,
-  workingSite?: string,
-): Promise<{ success: boolean; record: MobileAttendanceRecord }> {
-  const date = dateISO || todayISO();
-  const body: Record<string, any> = { date, status };
-  if (site != null) body.site = site;
-  if (workingSite != null) body.working_site = workingSite;
-
-  const data: any = await apiPost('/api/mobile/attendance/', body, { timeoutMs: 15000 });
-  if (data?.success === false) {
-    throw new ApiError(
-      asMsg(data, 'Failed to mark attendance.'),
-      0,
-      data,
-    );
-  }
-  const r = data?.record || data;
-  return {
-    success: true,
-    record: {
-      id:     Number(r?.id ?? 0),
-      date:   str(r?.date ?? date).slice(0, 10),
-      status: (r?.status ?? status) as MobileAttendanceRecord['status'],
-      source: str(r?.source ?? 'employee'),
-      locked: !!r?.locked,
-      site:         r?.site != null ? str(r.site) : undefined,
-      working_site: r?.working_site != null ? str(r.working_site) : undefined,
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------

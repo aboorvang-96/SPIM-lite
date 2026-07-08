@@ -1,25 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, AppState } from 'react-native';
-import { Text, Button, Surface, useTheme, Card, Divider, Chip, Menu, TextInput, Snackbar, HelperText } from 'react-native-paper';
+import { Text, Button, Surface, useTheme, Card, Divider, Chip } from 'react-native-paper';
 import { useAttendanceStore } from '../../store/attendanceStore';
 import { useMachineStore } from '../../store/machineStore';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { format } from 'date-fns';
 import { useFocusEffect } from 'expo-router';
 import MachineLogPopup from '../../components/attendance/MachineLogPopup';
-import { AttendanceRecord } from '../../types';
-import { fetchSites } from '../../services/api';
-
-const ATTENDANCE_STATUS_OPTIONS: AttendanceRecord['status'][] = ['Present', 'Leave', 'Holiday', 'Half Day', 'Week Off', 'No Week Off'];
 
 export default function AttendanceScreen() {
   const theme = useTheme();
   const records = useAttendanceStore(state => state.records);
-  const markAttendance = useAttendanceStore(state => state.markAttendance);
   const getPresentCount = useAttendanceStore(state => state.getPresentCount);
   const getStatusCount  = useAttendanceStore(state => state.getStatusCount);
   const refresh = useAttendanceStore(state => state.refresh);
-  const marking = useAttendanceStore(state => state.marking);
   const employee = useEmployeeStore(state => state.employee);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
   // Subscribe to logs so the "Today's Machine" chip re-renders when
@@ -27,21 +21,8 @@ export default function AttendanceScreen() {
   const _machineLogs = useMachineStore(state => state.logs);
   void _machineLogs;
   const [machinePopupVisible, setMachinePopupVisible] = useState(false);
-  const [statusMenuVisible, setStatusMenuVisible] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<AttendanceRecord['status']>('Present');
   const [presentExpanded, setPresentExpanded] = useState(false);
   const [absentExpanded,  setAbsentExpanded]  = useState(false);
-
-  // Site / Working Site state
-  const [sites, setSites] = useState<string[]>([]);
-  const [sitesFetched, setSitesFetched] = useState(false);
-  const [sitesFetchFailed, setSitesFetchFailed] = useState(false);
-  const [siteMenuVisible, setSiteMenuVisible] = useState(false);
-  const [selectedSite, setSelectedSite] = useState<string>('');
-  const [workingSite, setWorkingSite] = useState<string>('');
-
-  // Error / feedback UI
-  const [errorMsg, setErrorMsg] = useState<string>('');
 
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -54,9 +35,6 @@ export default function AttendanceScreen() {
   );
 
   // Refresh when the app returns to the foreground (e.g. iOS PWA resume).
-  // useFocusEffect does not re-fire when the screen is already focused and
-  // the app goes to background then returns, so an explicit AppState
-  // listener is required to satisfy the "fetch on resume" requirement.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') refresh();
@@ -64,40 +42,6 @@ export default function AttendanceScreen() {
     return () => sub.remove();
   }, [refresh]);
 
-  // Pre-fill the dropdown with the currently saved status (if any) so the
-  // employee can change it; otherwise keep the default 'Present'.
-  useEffect(() => {
-    const saved = currentRecord?.status;
-    if (saved && ATTENDANCE_STATUS_OPTIONS.includes(saved)) {
-      setSelectedStatus(saved);
-    }
-  }, [currentRecord?.status]);
-
-  // Fetch sites on mount. If it fails, fall back to a free-text site input.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetchSites();
-        if (cancelled) return;
-        setSites(resp.sites);
-        setSitesFetched(true);
-        setSitesFetchFailed(false);
-        if (!selectedSite) {
-          const def = resp.default || employee?.site || resp.sites[0] || '';
-          if (def) setSelectedSite(def);
-        }
-      } catch {
-        if (cancelled) return;
-        setSitesFetched(true);
-        setSitesFetchFailed(true);
-        if (!selectedSite && employee?.site) setSelectedSite(employee.site);
-      }
-    })();
-    return () => { cancelled = true; };
-  // employee.site is used for pre-fill only; refetching when it changes is fine.
-  }, [employee?.site]);
-  
   // Calculate cycle (26th to 25th)
   let cycleStartMonth = today.getMonth();
   let cycleStartYear = today.getFullYear();
@@ -109,7 +53,7 @@ export default function AttendanceScreen() {
     }
   }
   const cycleStart = new Date(cycleStartYear, cycleStartMonth, 26);
-  
+
   let cycleEndMonth = cycleStartMonth + 1;
   let cycleEndYear = cycleStartYear;
   if (cycleEndMonth > 11) {
@@ -179,34 +123,18 @@ export default function AttendanceScreen() {
     ? getMachineForEmployee(employee.id)
     : null;
 
-  const handleMarkAttendance = async () => {
-    if (marking) return;
-    setErrorMsg('');
-    const site = selectedSite.trim();
-    const ws = workingSite.trim();
-    const result = await markAttendance(
-      todayStr,
-      selectedStatus,
-      site || undefined,
-      ws || undefined,
-    );
-    if (!result.success) {
-      setErrorMsg(result.error || 'Failed to mark attendance. Please try again.');
-    }
-  };
-
   const handleOpenMachineLog = () => setMachinePopupVisible(true);
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      
+
       <Surface style={styles.todayCard} elevation={2}>
         <Text variant="titleMedium" style={{ color: theme.colors.secondary, marginBottom: 8 }}>Today's Status</Text>
         <Text variant="headlineSmall" style={{ fontWeight: 'bold', marginBottom: 16 }}>
           {format(today, 'EEEE, dd MMM yyyy')}
         </Text>
-        
-        {currentRecord && (
+
+        {currentRecord ? (
           <View style={[styles.statusBox, { marginBottom: 16, backgroundColor: '#F3F4F6' }]}>
             <Text variant="headlineSmall" style={{ color: '#9CA3AF', fontWeight: 'bold' }}>
               {currentRecord.status}
@@ -231,129 +159,11 @@ export default function AttendanceScreen() {
               </Button>
             </View>
           </View>
+        ) : (
+          <View style={styles.recordedBox}>
+            <Text variant="bodyMedium" style={{ color: '#9CA3AF' }}>Not Marked</Text>
+          </View>
         )}
-
-        {/* When attendance exists (any source) → locked grey indicator.
-            Employee cannot change once marked; only admin can via SPIM Suite.
-            When no record yet → show dropdown + Mark Attendance button. */}
-        <View style={{ width: '100%' }}>
-          {currentRecord?.locked ? (
-            <View style={styles.recordedBox}>
-              <Text variant="bodyMedium" style={{ color: '#9CA3AF' }}>Attendance recorded ✓</Text>
-            </View>
-          ) : (
-            <>
-              {!currentRecord && (
-                <Text variant="titleMedium" style={{ color: theme.colors.error, marginBottom: 16, textAlign: 'center' }}>
-                  Not Marked
-                </Text>
-              )}
-              <Menu
-                visible={statusMenuVisible}
-                onDismiss={() => setStatusMenuVisible(false)}
-                anchor={
-                  <TextInput
-                    mode="outlined"
-                    value={selectedStatus}
-                    editable={false}
-                    label="Status"
-                    right={
-                      <TextInput.Icon
-                        icon={statusMenuVisible ? 'menu-up' : 'menu-down'}
-                        onPress={() => setStatusMenuVisible(true)}
-                      />
-                    }
-                    onPressIn={() => setStatusMenuVisible(true)}
-                    dense
-                  />
-                }
-                contentStyle={{ backgroundColor: theme.colors.surface }}
-              >
-                {ATTENDANCE_STATUS_OPTIONS.map(opt => (
-                  <Menu.Item
-                    key={opt}
-                    title={opt}
-                    onPress={() => {
-                      setSelectedStatus(opt);
-                      setStatusMenuVisible(false);
-                    }}
-                  />
-                ))}
-              </Menu>
-
-              {/* Site: dropdown when fetch succeeded, text input fallback otherwise. */}
-              {sitesFetched && !sitesFetchFailed && sites.length > 0 ? (
-                <Menu
-                  visible={siteMenuVisible}
-                  onDismiss={() => setSiteMenuVisible(false)}
-                  anchor={
-                    <TextInput
-                      mode="outlined"
-                      value={selectedSite}
-                      editable={false}
-                      label="Site"
-                      style={{ marginTop: 12 }}
-                      right={
-                        <TextInput.Icon
-                          icon={siteMenuVisible ? 'menu-up' : 'menu-down'}
-                          onPress={() => setSiteMenuVisible(true)}
-                        />
-                      }
-                      onPressIn={() => setSiteMenuVisible(true)}
-                      dense
-                    />
-                  }
-                  contentStyle={{ backgroundColor: theme.colors.surface }}
-                >
-                  {sites.map(opt => (
-                    <Menu.Item
-                      key={opt}
-                      title={opt}
-                      onPress={() => {
-                        setSelectedSite(opt);
-                        setSiteMenuVisible(false);
-                      }}
-                    />
-                  ))}
-                </Menu>
-              ) : (
-                <TextInput
-                  mode="outlined"
-                  value={selectedSite}
-                  onChangeText={setSelectedSite}
-                  label="Site"
-                  style={{ marginTop: 12 }}
-                  dense
-                />
-              )}
-
-              <TextInput
-                mode="outlined"
-                value={workingSite}
-                onChangeText={setWorkingSite}
-                label="Working Site"
-                style={{ marginTop: 12 }}
-                dense
-              />
-
-              <Button
-                mode="contained"
-                icon="hand-wave"
-                onPress={handleMarkAttendance}
-                loading={marking}
-                disabled={marking}
-                style={{ borderRadius: 8, paddingVertical: 8, marginTop: 16 }}
-              >
-                {marking ? 'Saving...' : 'Mark Attendance'}
-              </Button>
-              {errorMsg ? (
-                <HelperText type="error" visible style={{ textAlign: 'center' }}>
-                  {errorMsg}
-                </HelperText>
-              ) : null}
-            </>
-          )}
-        </View>
       </Surface>
 
       <Text variant="titleLarge" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
@@ -473,15 +283,6 @@ export default function AttendanceScreen() {
         visible={machinePopupVisible}
         onDismiss={() => setMachinePopupVisible(false)}
       />
-
-      <Snackbar
-        visible={!!errorMsg}
-        onDismiss={() => setErrorMsg('')}
-        duration={4000}
-        action={{ label: 'Dismiss', onPress: () => setErrorMsg('') }}
-      >
-        {errorMsg}
-      </Snackbar>
     </ScrollView>
   );
 }
