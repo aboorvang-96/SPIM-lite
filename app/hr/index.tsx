@@ -25,6 +25,13 @@ export default function HrHomeScreen() {
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/income')}
         />
+        <List.Item
+          title="Expense Management"
+          description="View, add, edit, delete expenses"
+          left={props => <List.Icon {...props} icon="cash-minus" />}
+          right={props => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => router.push('/hr/expense')}
+        />
       </List.Section>
     </View>
   );

@@ -326,3 +326,136 @@ export async function updateHrIncome(
 export async function deleteHrIncome(pk: number): Promise<void> {
   await apiDelete(`/api/mobile/hr/income/${pk}/`);
 }
+
+// ---------------------------------------------------------------------------
+// HR Expense — mirrors finance.views._expense_to_dict verbatim so no
+// serializer logic is duplicated on the client. Every field on HrExpense
+// maps 1:1 with a JSON key returned by the backend.
+// ---------------------------------------------------------------------------
+
+export interface HrExpense {
+  id: number;
+  date: string;              // YYYY-MM-DD
+  date_display: string;      // "dd MMM, YYYY"
+  amount: string;
+  amount_display: string;
+  category: string;
+  category_id: number | null;
+  expense_category: string;
+  expense_category_display: string;
+  expense_type: string;      // maps to Transaction.purpose
+  location: string;
+  payment_by: string;
+  payment_to: string;
+  payment_mode: string;
+  income_source: string;
+  description: string;
+}
+
+export interface HrExpenseCategory {
+  id: number;
+  name: string;
+}
+
+export interface HrExpenseFilters {
+  search?: string;
+  category?: number | string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface HrExpenseInput {
+  amount: string;
+  date: string;
+  category?: number | string | null;
+  expense_category?: string;
+  purpose?: string;
+  location_site?: string;
+  payment_by?: string;
+  vendor?: string;
+  payment_mode?: string;
+  income_source?: string;
+  description?: string;
+}
+
+function mapExpense(raw: any): HrExpense {
+  const catId =
+    raw?.category_id === null || raw?.category_id === undefined
+      ? null
+      : Number(raw.category_id);
+  return {
+    id:                       Number(raw?.id ?? 0),
+    date:                     str(raw?.date),
+    date_display:             str(raw?.date_display),
+    amount:                   str(raw?.amount ?? '0.00'),
+    amount_display:           str(raw?.amount_display ?? raw?.amount ?? '0.00'),
+    category:                 str(raw?.category),
+    category_id:              catId,
+    expense_category:         str(raw?.expense_category),
+    expense_category_display: str(raw?.expense_category_display),
+    expense_type:             str(raw?.expense_type),
+    location:                 str(raw?.location),
+    payment_by:               str(raw?.payment_by),
+    payment_to:               str(raw?.payment_to),
+    payment_mode:             str(raw?.payment_mode),
+    income_source:            str(raw?.income_source),
+    description:              str(raw?.description),
+  };
+}
+
+let _hrExpenseCategoryCache: HrExpenseCategory[] | null = null;
+
+export function clearHrExpenseCategoryCache(): void {
+  _hrExpenseCategoryCache = null;
+}
+
+export async function fetchHrExpenseCategories(
+  opts: { force?: boolean } = {},
+): Promise<HrExpenseCategory[]> {
+  if (!opts.force && _hrExpenseCategoryCache) return _hrExpenseCategoryCache;
+  const data: any = await apiGet('/api/mobile/hr/expense/categories/');
+  const list: any[] = Array.isArray(data?.categories) ? data.categories : [];
+  const mapped: HrExpenseCategory[] = list.map(c => ({
+    id:   Number(c?.id ?? 0),
+    name: str(c?.name),
+  }));
+  _hrExpenseCategoryCache = mapped;
+  return mapped;
+}
+
+export async function fetchHrExpenses(
+  filters: HrExpenseFilters = {},
+): Promise<HrExpense[]> {
+  const params = new URLSearchParams();
+  if (filters.search)   params.set('search',    filters.search);
+  if (filters.category) params.set('category',  String(filters.category));
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo)   params.set('date_to',   filters.dateTo);
+  const qs = params.toString();
+  const path = qs ? `/api/mobile/hr/expense/?${qs}` : '/api/mobile/hr/expense/';
+  const data: any = await apiGet(path);
+  const list: any[] = Array.isArray(data?.expenses) ? data.expenses : [];
+  return list.map(mapExpense);
+}
+
+export async function fetchHrExpense(pk: number): Promise<HrExpense> {
+  const data: any = await apiGet(`/api/mobile/hr/expense/${pk}/`);
+  return mapExpense(data?.expense ?? data);
+}
+
+export async function createHrExpense(input: HrExpenseInput): Promise<HrExpense> {
+  const data: any = await apiPost('/api/mobile/hr/expense/', input);
+  return mapExpense(data?.expense ?? data);
+}
+
+export async function updateHrExpense(
+  pk: number,
+  input: HrExpenseInput,
+): Promise<HrExpense> {
+  const data: any = await apiPut(`/api/mobile/hr/expense/${pk}/`, input);
+  return mapExpense(data?.expense ?? data);
+}
+
+export async function deleteHrExpense(pk: number): Promise<void> {
+  await apiDelete(`/api/mobile/hr/expense/${pk}/`);
+}
