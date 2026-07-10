@@ -50,6 +50,13 @@ export default function HrPanelTab() {
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/expense')}
         />
+        <List.Item
+          title="Attendance Reports"
+          description="Download PDF / Excel by employee or cycle"
+          left={props => <List.Icon {...props} icon="file-chart" />}
+          right={props => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => router.push('/hr/reports/attendance')}
+        />
       </List.Section>
       <View style={{ height: 40 }} />
     </ScrollView>

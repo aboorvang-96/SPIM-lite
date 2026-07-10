@@ -459,3 +459,40 @@ export async function updateHrExpense(
 export async function deleteHrExpense(pk: number): Promise<void> {
   await apiDelete(`/api/mobile/hr/expense/${pk}/`);
 }
+
+// ---------------------------------------------------------------------------
+// HR Attendance Report — resolves the fully-qualified download URL for
+// GET /api/mobile/hr/attendance/report/. The endpoint streams PDF or XLSX
+// with Content-Disposition: attachment, so the caller just hands the URL
+// to Linking.openURL — same pattern payslipDownloadUrl uses.
+//
+// The bearer token is appended as `?token=<>` (accepted server-side by
+// _extract_token) so the OS browser can fetch the file without needing
+// custom headers, and the browser's cookie/token store is irrelevant.
+// ---------------------------------------------------------------------------
+
+export interface HrAttendanceReportOptions {
+  employeeId?: number | 'all';
+  dateFrom: string;   // YYYY-MM-DD
+  dateTo:   string;   // YYYY-MM-DD
+  format:   'pdf' | 'xlsx';
+}
+
+export async function hrAttendanceReportUrl(
+  opts: HrAttendanceReportOptions,
+): Promise<string> {
+  const { API_BASE_URL, getAuthToken } = await import('./apiClient');
+  const token = await getAuthToken();
+  const params = new URLSearchParams();
+  params.set('format', opts.format);
+  params.set(
+    'employee_id',
+    opts.employeeId == null || opts.employeeId === 'all'
+      ? 'all'
+      : String(opts.employeeId),
+  );
+  if (opts.dateFrom) params.set('date_from', opts.dateFrom);
+  if (opts.dateTo)   params.set('date_to',   opts.dateTo);
+  if (token)         params.set('token',     token);
+  return `${API_BASE_URL}/api/mobile/hr/attendance/report/?${params.toString()}`;
+}
