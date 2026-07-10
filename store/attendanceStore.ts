@@ -73,6 +73,13 @@ interface AttendanceState {
   getStatusCount: (status: AttendanceRecord['status'], startDate: string, endDate: string) => number;
   /** Returns true when the record for dateStr was set by an admin (read-only). */
   isAdminLocked: (dateStr: string) => boolean;
+
+  /**
+   * Wipe in-memory + persisted state. Called from authStore on logout / 401
+   * so a second user signing in on the same device never sees the first
+   * user's cached attendance during Step 1 of refresh().
+   */
+  clear: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,4 +234,13 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   },
 
   isAdminLocked: (dateStr) => get().records[dateStr]?.source === 'admin',
+
+  clear: async () => {
+    set({ records: {}, loading: false, loaded: false });
+    try {
+      await AsyncStorage.removeItem(RECORDS_KEY);
+    } catch {
+      // best effort — in-memory state is already cleared
+    }
+  },
 }));

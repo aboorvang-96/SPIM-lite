@@ -9,6 +9,28 @@ import {
   setUnauthorizedHandler,
 } from '../services/apiClient';
 import { mobileLogout, fetchProfile } from '../services/api';
+import {
+  clearHrEmployeeCache,
+  clearHrSalaryCache,
+  clearHrIncomeCategoryCache,
+  clearHrExpenseCategoryCache,
+} from '../services/hrApi';
+import { useEmployeeStore } from './employeeStore';
+import { useAttendanceStore } from './attendanceStore';
+import { useSalaryStore } from './salaryStore';
+
+/**
+ * Wipe every module-level HR cache. These are keyed by process memory,
+ * not by user — without this, logging out and back in as a different
+ * tenant briefly surfaces the previous account's roster / categories /
+ * salary until a screen forces a refetch.
+ */
+function clearHrCaches(): void {
+  clearHrEmployeeCache();
+  clearHrSalaryCache();
+  clearHrIncomeCategoryCache();
+  clearHrExpenseCategoryCache();
+}
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -63,6 +85,12 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         await mobileLogout();
         await clearAuthToken();
+        clearHrCaches();
+        useEmployeeStore.getState().clear();
+        // Purge cached attendance + salary so the next user never sees the
+        // previous user's numbers during Step 1 of each store's refresh().
+        await useAttendanceStore.getState().clear();
+        await useSalaryStore.getState().clear();
         // orgCode is intentionally preserved so the login form auto-fills
         // it next time — the employee stays at the same organisation.
         set({
@@ -117,6 +145,10 @@ export const useAuthStore = create<AuthState>()(
 setUnauthorizedHandler(async () => {
   // Reuse AsyncStorage key constant so a future rename remains in sync.
   await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  clearHrCaches();
+  useEmployeeStore.getState().clear();
+  await useAttendanceStore.getState().clear();
+  await useSalaryStore.getState().clear();
   useAuthStore.setState({
     isAuthenticated: false,
     userId: null,

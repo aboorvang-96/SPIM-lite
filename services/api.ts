@@ -58,6 +58,14 @@ export interface MobileEmployee {
   department: string;
   location: string;
   site: string;
+  // Backend login response also carries these; surfacing them here lets
+  // login.tsx populate the Employee record without waiting for /profile/.
+  // Notably `level` is one of the fields isHrUser() scans, so persisting
+  // it at login time prevents a brief non-HR window right after sign-in.
+  level: string;
+  mobile: string;
+  branch: string;
+  base_salary: string;
 }
 
 export interface MobileLoginResponse {
@@ -118,6 +126,10 @@ export async function mobileLogin(
         department:   str(emp.department),
         location:     str(emp.location),
         site:         str(emp.site),
+        level:        str(emp.level),
+        mobile:       str(emp.mobile),
+        branch:       str(emp.branch),
+        base_salary:  str(emp.base_salary),
       },
     };
   } catch (err: any) {

@@ -73,16 +73,21 @@ export default function LoginScreen() {
         id:               resp.employee.employee_id || resp.employee.login_id,
         name:             resp.employee.name || '',
         role:             resp.employee.designation || '',
-        level:            '',
+        // Carry level from the login response so isHrUser() has the
+        // organisational field it needs before /profile/ hydrates the
+        // rest of the Employee record.
+        level:            resp.employee.level || '',
         department:       resp.employee.department || '',
         site:             resp.employee.site || resp.employee.location || '',
-        mobile:           '',
+        mobile:           resp.employee.mobile || '',
         email:            '',
         address:          '',
         emergencyContact: '',
         bankDetails:      '',
         pfNumber:         '',
         joiningDate:      '',
+        branch:           resp.employee.branch || '',
+        baseSalary:       resp.employee.base_salary || '0',
       };
       setEmployee(mapped);
 

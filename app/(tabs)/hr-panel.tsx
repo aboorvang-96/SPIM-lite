@@ -45,7 +45,7 @@ export default function HrPanelTab() {
         />
         <List.Item
           title="Expense Management"
-          description="Coming in a future update"
+          description="View, add, edit, delete expenses"
           left={props => <List.Icon {...props} icon="cash-minus" />}
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/expense')}

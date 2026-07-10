@@ -14,6 +14,12 @@ interface SalaryState {
   getDailyRate: () => number;
   getNetPay: (presentCount: number) => number;
   getAttendanceEarnings: (presentCount: number) => number;
+  /**
+   * Wipe in-memory + persisted state. Called from authStore on logout / 401
+   * so a second user signing in on the same device never sees the first
+   * user's cached salary during Step 1 of refresh().
+   */
+  clear: () => Promise<void>;
 }
 
 /**
@@ -188,5 +194,19 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
     if (d.netSalary && d.netSalary > 0) return d.netSalary;
     // Fallback: local formula (used before first API response or on error).
     return SalaryCalculationService.computeNetPay(d, _presentCount);
+  },
+
+  clear: async () => {
+    set({
+      details:  { ...DEFAULT_DETAILS },
+      payslips: [],
+      loaded:   false,
+      loading:  false,
+    });
+    try {
+      await AsyncStorage.removeItem(SALARY_KEY);
+    } catch {
+      // best effort — in-memory state is already cleared
+    }
   },
 }));
