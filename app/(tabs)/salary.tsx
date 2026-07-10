@@ -2,11 +2,10 @@ import React, { useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import { Text, Card, Surface, useTheme, Divider, ProgressBar, Button, ActivityIndicator } from 'react-native-paper';
 import { useEmployeeStore } from '../../store/employeeStore';
-import { useAttendanceStore } from '../../store/attendanceStore';
 import { useSalaryStore } from '../../store/salaryStore';
 import { useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
-import { formatINR, formatINRPerDay, formatINRProgress } from '../../utils/currencyFormatter';
+import { formatINR, formatINRPerDay, formatINRProgress, formatCount, MISSING_VALUE } from '../../utils/currencyFormatter';
 import { payslipDownloadUrl } from '../../services/api';
 
 export default function SalaryScreen() {
@@ -15,13 +14,8 @@ export default function SalaryScreen() {
   const employeeLoading = useEmployeeStore(state => state.loading);
   const employeeError = useEmployeeStore(state => state.error);
   const refreshEmployee = useEmployeeStore(state => state.refresh);
-  const getPresentCount = useAttendanceStore(state => state.getPresentCount);
-  const _attendanceRecords = useAttendanceStore(state => state.records);
-  void _attendanceRecords;
   const salaryDetails = useSalaryStore(state => state.details);
   const payslips = useSalaryStore(state => state.payslips);
-  const getAttendanceEarnings = useSalaryStore(state => state.getAttendanceEarnings);
-  const getNetPay = useSalaryStore(state => state.getNetPay);
   const refresh = useSalaryStore(state => state.refresh);
 
   useFocusEffect(
@@ -30,33 +24,30 @@ export default function SalaryScreen() {
     }, [refresh])
   );
 
-  const today = new Date();
-  
-  // Calculate cycle (26th to 25th)
-  let cycleStartMonth = today.getMonth();
-  let cycleStartYear = today.getFullYear();
-  if (today.getDate() <= 25) {
-    cycleStartMonth -= 1;
-    if (cycleStartMonth < 0) {
-      cycleStartMonth = 11;
-      cycleStartYear -= 1;
-    }
-  }
-  const cycleStart = new Date(cycleStartYear, cycleStartMonth, 26);
-  
-  let cycleEndMonth = cycleStartMonth + 1;
-  let cycleEndYear = cycleStartYear;
-  if (cycleEndMonth > 11) {
-    cycleEndMonth = 0;
-    cycleEndYear += 1;
-  }
-  const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 25);
-  
-  const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
-  const totalWorkingDays = salaryDetails.totalWorkingDays;
-  const dailyRate = useSalaryStore.getState().getDailyRate();
-  const attendanceEarnings = getAttendanceEarnings(presentCount);
-  const netPay = getNetPay(presentCount);
+  // Every value below is a direct read from SPIM Suite. The mobile client
+  // performs no arithmetic — no multiplication, division, counting, or
+  // Sunday logic — and INVENTS NO fallback: a missing backend field stays
+  // `undefined` and the formatter renders "—". Formatting (currency /
+  // date) is the only transformation applied.
+  const presentCount       = salaryDetails.presentDays;
+  const paidDays           = salaryDetails.paidDays;
+  const totalWorkingDays   = salaryDetails.totalWorkingDays;
+  const dailyRate          = salaryDetails.dailyRate;
+  const attendanceEarnings = salaryDetails.attendanceEarnings;
+  const netPay             = salaryDetails.netSalary;
+  const foodAllowance      = salaryDetails.foodAllowance;
+
+  // Cycle boundaries come exclusively from Suite. If missing, they stay
+  // undefined and the cycle label renders as MISSING_VALUE.
+  const cycleStart = salaryDetails.cycleStart ? new Date(salaryDetails.cycleStart) : undefined;
+  const cycleEnd   = salaryDetails.cycleEnd   ? new Date(salaryDetails.cycleEnd)   : undefined;
+
+  // Visual progress bar percentage — UI-only rendering value derived from
+  // two backend business values (paid_days, total_working_days). No number
+  // rendered to the user is calculated on the client.
+  const progressFraction = (paidDays != null && totalWorkingDays)
+    ? Math.min(paidDays / totalWorkingDays, 1)
+    : 0;
 
   if (!employee) {
     // Profile not yet hydrated. Distinguish in-flight refresh (spinner)
@@ -106,7 +97,9 @@ export default function SalaryScreen() {
           {formatINR(netPay)}
         </Text>
         <Text variant="labelLarge" style={{ marginTop: 8, color: theme.colors.secondary }}>
-          For {format(cycleStart, 'MMM')} - {format(cycleEnd, 'MMM yyyy')} Cycle
+          {cycleStart && cycleEnd
+            ? `For ${format(cycleStart, 'MMM')} - ${format(cycleEnd, 'MMM yyyy')} Cycle`
+            : `For ${MISSING_VALUE} Cycle`}
         </Text>
       </Surface>
 
@@ -118,13 +111,13 @@ export default function SalaryScreen() {
           <Text variant="bodyMedium">Attendance Earnings</Text>
           <Text variant="bodyLarge" style={{ fontWeight: 'bold' }}>{formatINRProgress(attendanceEarnings, salaryDetails.baseMonthly)}</Text>
         </View>
-        <ProgressBar 
-          progress={Math.min(presentCount / totalWorkingDays, 1)} 
-          color={theme.colors.primary} 
-          style={styles.progressBar} 
+        <ProgressBar
+          progress={progressFraction}
+          color={theme.colors.primary}
+          style={styles.progressBar}
         />
         <Text variant="labelSmall" style={{ color: '#666', textAlign: 'right' }}>
-          {presentCount} / {totalWorkingDays} Days Present
+          {formatCount(presentCount)} / {formatCount(totalWorkingDays)} Days Present
         </Text>
       </Surface>
 
@@ -153,10 +146,10 @@ export default function SalaryScreen() {
           </View>
           <View style={styles.breakdownRow}>
             <Text variant="bodyMedium" style={styles.label}>Daily Rate</Text>
-            <Text variant="bodyMedium" style={styles.value}>{formatINRPerDay(Math.round(dailyRate))}</Text>
+            <Text variant="bodyMedium" style={styles.value}>{formatINRPerDay(dailyRate)}</Text>
           </View>
           <View style={styles.breakdownRow}>
-            <Text variant="bodyMedium" style={styles.label}>Attendance Earnings ({presentCount}d)</Text>
+            <Text variant="bodyMedium" style={styles.label}>Attendance Earnings ({formatCount(paidDays)}d)</Text>
             <Text variant="bodyMedium" style={styles.value}>{formatINR(attendanceEarnings)}</Text>
           </View>
           <View style={styles.breakdownRow}>
@@ -166,7 +159,7 @@ export default function SalaryScreen() {
           <View style={styles.breakdownRow}>
             <Text variant="bodyMedium" style={styles.label}>Food Allowance</Text>
             <Text variant="bodyMedium" style={styles.value}>
-              {formatINR(parseFloat(payslips[0]?.food_allowance || '0'))}
+              {formatINR(foodAllowance)}
             </Text>
           </View>
 

@@ -104,17 +104,26 @@ export interface HrSalary {
     employee_id: string;
     name: string;
   };
+  // Every salary field is optional — SPIM Suite is authoritative and any
+  // missing key stays `undefined` through the pipeline so the UI can
+  // render "—" instead of ₹0.
   salary: {
-    basic_salary: string;
-    hra: string;
-    allowances: string;
-    deductions: string;
-    net_salary: string;
-    paid_days: number;
-    present_days: number;
-    absent_days: number;
-    cycle_start: string;
-    cycle_end: string;
+    basic_salary?: string;
+    hra?: string;
+    allowances?: string;
+    deductions?: string;
+    net_salary?: string;
+    paid_days?: number;
+    present_days?: number;
+    absent_days?: number;
+    cycle_start?: string;
+    cycle_end?: string;
+    attendance_earnings?: string;
+    daily_rate?: string;
+    total_working_days?: number;
+    advance_deduction?: string;
+    food_allowance?: string;
+    overtime_allowance?: string;
   };
 }
 
@@ -149,6 +158,15 @@ export async function fetchHrSalary(
     const data: any = await apiGet(`/api/mobile/hr/salary/?${qs}`);
     const emp = data?.employee || {};
     const sal = data?.salary || {};
+    // Raw pass-through: no `?? '0.00'`, no `?? 0`, no legacy fallback.
+    // Missing Suite fields stay `undefined` so the HR viewer can render "—".
+    const optStr = (v: any): string | undefined =>
+      v === undefined || v === null ? undefined : String(v);
+    const optNum = (v: any): number | undefined => {
+      if (v === undefined || v === null || v === '') return undefined;
+      const n = typeof v === 'number' ? v : Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
     const mapped: HrSalary = {
       employee: {
         pk:          Number(emp.pk ?? employeePk),
@@ -156,16 +174,22 @@ export async function fetchHrSalary(
         name:        str(emp.name),
       },
       salary: {
-        basic_salary: str(sal.basic_salary ?? '0.00'),
-        hra:          str(sal.hra          ?? '0.00'),
-        allowances:   str(sal.allowances   ?? '0.00'),
-        deductions:   str(sal.deductions   ?? '0.00'),
-        net_salary:   str(sal.net_salary   ?? '0.00'),
-        paid_days:    Number(sal.paid_days    ?? 0),
-        present_days: Number(sal.present_days ?? 0),
-        absent_days:  Number(sal.absent_days  ?? 0),
-        cycle_start:  str(sal.cycle_start),
-        cycle_end:    str(sal.cycle_end),
+        basic_salary:        optStr(sal.basic_salary),
+        hra:                 optStr(sal.hra),
+        allowances:          optStr(sal.allowances),
+        deductions:          optStr(sal.deductions),
+        net_salary:          optStr(sal.net_salary),
+        paid_days:           optNum(sal.paid_days),
+        present_days:        optNum(sal.present_days),
+        absent_days:         optNum(sal.absent_days),
+        cycle_start:         optStr(sal.cycle_start),
+        cycle_end:           optStr(sal.cycle_end),
+        attendance_earnings: optStr(sal.attendance_earnings),
+        daily_rate:          optStr(sal.daily_rate),
+        total_working_days:  optNum(sal.total_working_days),
+        advance_deduction:   optStr(sal.advance_deduction),
+        food_allowance:      optStr(sal.food_allowance),
+        overtime_allowance:  optStr(sal.overtime_allowance),
       },
     };
     _hrSalaryCache.set(employeePk, mapped);
@@ -473,20 +497,27 @@ export async function deleteHrExpense(pk: number): Promise<void> {
 
 export interface HrDashboardToday {
   date: string;              // YYYY-MM-DD (server's today, tenant TZ)
-  total_employees: number;
-  present: number;
-  absent: number;
-  late: number | null;       // null if Suite has no "late" concept yet
+  // All four are optional pass-throughs — a missing Suite field stays
+  // undefined and the HR dashboard renders "—" instead of fabricating 0.
+  total_employees?: number;
+  present?: number;
+  absent?: number;
+  late?: number;
 }
 
 export async function fetchHrDashboardToday(): Promise<HrDashboardToday> {
   const data: any = await apiGet('/api/mobile/hr/dashboard/today/');
+  const optNum = (v: any): number | undefined => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
   return {
     date:            str(data?.date),
-    total_employees: Number(data?.total_employees ?? 0),
-    present:         Number(data?.present ?? 0),
-    absent:          Number(data?.absent ?? 0),
-    late:            data?.late == null ? null : Number(data.late),
+    total_employees: optNum(data?.total_employees),
+    present:         optNum(data?.present),
+    absent:          optNum(data?.absent),
+    late:            optNum(data?.late),
   };
 }
 

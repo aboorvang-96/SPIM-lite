@@ -37,10 +37,10 @@ export interface Employee {
 
 export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
-  // 'Holiday', 'Week Off' and 'No Week Off' are UI-only labels — backend
-  // has no enum for them, so they round-trip as 'Leave' (see
-  // store/attendanceStore.ts).
-  status: 'Present' | 'Absent' | 'Leave' | 'Half Day' | 'Holiday' | 'Week Off' | 'No Week Off';
+  // Every label comes from SPIM Suite's display_status() helper — the
+  // mobile app never invents one. 'Sunday' arrives from Suite when
+  // ensure_sunday_holidays() has recorded the row.
+  status: 'Present' | 'Absent' | 'Leave' | 'Half Day' | 'Holiday' | 'Week Off' | 'No Week Off' | 'Sunday';
   timeIn?: string;
   timeOut?: string;
   /** 'admin' when set by an admin via SPIM Suite; 'employee' when self-marked. */
@@ -52,15 +52,23 @@ export interface AttendanceRecord {
 }
 
 export interface SalaryDetails {
-  baseMonthly: number;
-  otAllowance: number;
-  pfDeduction: number;
-  advanceDeduction: number;
-  totalWorkingDays: number;
+  // Every field is optional. `undefined` means SPIM Suite did not deliver
+  // that field for this employee/cycle — the mobile app must render "—",
+  // never a fabricated zero. No client-side calculation, no fallback.
+  baseMonthly?: number;
+  otAllowance?: number;
+  pfDeduction?: number;
+  advanceDeduction?: number;
+  totalWorkingDays?: number;
   netSalary?: number;
   cycleStart?: string;
   cycleEnd?: string;
   paidDays?: number;
+  attendanceEarnings?: number;
+  dailyRate?: number;
+  presentDays?: number;
+  absentDays?: number;
+  foodAllowance?: number;
 }
 
 /**

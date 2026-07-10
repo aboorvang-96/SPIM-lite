@@ -57,22 +57,20 @@ function currentCycleRequiredPaidDays(): number {
   return requiredPaidDaysForMonth(endYear, endMonth);
 }
 
-// Conservative defaults so the UI never NaN's before the first refresh().
-const DEFAULT_DETAILS: SalaryDetails = {
-  baseMonthly:      0,
-  otAllowance:      0,
-  pfDeduction:      0,
-  advanceDeduction: 0,
-  totalWorkingDays: currentCycleRequiredPaidDays(),
-  netSalary:        0,
-  cycleStart:       '',
-  cycleEnd:         '',
-  paidDays:         0,
-};
+// Before the first successful API refresh, every field is `undefined`.
+// The mobile app never invents a value — the UI renders "—" instead.
+const DEFAULT_DETAILS: SalaryDetails = {};
 
-function num(v: string | null | undefined): number {
-  const n = parseFloat(v ?? '0');
-  return Number.isFinite(n) ? n : 0;
+/**
+ * Parse a backend numeric string ("29700.00") without inventing a value.
+ * Returns `undefined` when the field is missing / empty / non-numeric —
+ * NEVER 0. A displayed "₹ 0" would be indistinguishable from a genuine
+ * zero from Suite; "—" is the only correct rendering for absent data.
+ */
+function optNum(v: string | number | null | undefined): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +124,10 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
     if (get().loading) return;
     set({ loading: true });
 
-    // Step 1: show persisted data immediately (avoids flash of zeros on cold start)
-    if (get().details.baseMonthly === 0) {
+    // Step 1: show persisted data immediately (avoids flash on cold start)
+    if (get().details.baseMonthly === undefined) {
       const stored = await loadPersistedSalary();
-      if (stored.details.baseMonthly > 0 || stored.payslips.length > 0) {
+      if (stored.details.baseMonthly !== undefined || stored.payslips.length > 0) {
         set({ details: stored.details, payslips: stored.payslips });
       }
     }
@@ -144,30 +142,25 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
       if (!salaryResp.success) throw new Error(salaryResp.error || 'Salary fetch failed');
       const sal = salaryResp.salary;
 
-      const cycleStart = sal.cycle_start || '';
-      const cycleEnd   = sal.cycle_end   || '';
-
-      // Derive totalWorkingDays from the API's cycle boundaries instead of
-      // re-running the local month-length heuristic.
-      let totalWorkingDays = 30; // safe default
-      if (cycleStart && cycleEnd) {
-        const start = new Date(cycleStart);
-        const end   = new Date(cycleEnd);
-        totalWorkingDays = Math.round(
-          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-        ) + 1;
-      }
-
+      // Zero client-side arithmetic. Zero fallbacks. Zero cycle-length
+      // derivation. Every field is a pass-through — SPIM Suite is the
+      // sole source of truth for salary, attendance, cycle and Sunday.
+      // A missing field stays `undefined` and renders as "—".
       const details: SalaryDetails = {
-        baseMonthly:      num(sal.basic_salary),
-        otAllowance:      num(sal.allowances),
-        pfDeduction:      num(sal.deductions),
-        advanceDeduction: 0,
-        totalWorkingDays,
-        netSalary:        num(sal.net_salary),
-        cycleStart,
-        cycleEnd,
-        paidDays:         Number(sal.paid_days ?? 0),
+        baseMonthly:        optNum(sal.basic_salary),
+        otAllowance:        optNum(sal.overtime_allowance),
+        pfDeduction:        optNum(sal.deductions),
+        advanceDeduction:   optNum(sal.advance_deduction),
+        totalWorkingDays:   optNum(sal.total_working_days),
+        netSalary:          optNum(sal.net_salary),
+        cycleStart:         sal.cycle_start,
+        cycleEnd:           sal.cycle_end,
+        paidDays:           optNum(sal.paid_days),
+        attendanceEarnings: optNum(sal.attendance_earnings),
+        dailyRate:          optNum(sal.daily_rate),
+        presentDays:        optNum(sal.present_days),
+        absentDays:         optNum(sal.absent_days),
+        foodAllowance:      optNum(sal.food_allowance),
       };
 
       // Step 3: set new data into store
@@ -181,19 +174,21 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
     }
   },
 
+  // The three selectors below are DEAD helpers preserved per Phase 10.2's
+  // "no cleanup" rule. No screen calls them. Inline `?? 0` here does NOT
+  // fall back on any displayed value — it only keeps the (unused) code
+  // type-checking now that every SalaryDetails field is optional.
   getDailyRate: () => {
     const d = get().details;
     if (!d.totalWorkingDays) return 0;
-    return d.baseMonthly / d.totalWorkingDays;
+    return (d.baseMonthly ?? 0) / d.totalWorkingDays;
   },
   getAttendanceEarnings: (presentCount: number) =>
-    SalaryCalculationService.computeAttendanceEarnings(get().details, presentCount),
+    SalaryCalculationService.computeAttendanceEarnings(get().details as any, presentCount),
   getNetPay: (_presentCount: number) => {
     const d = get().details;
-    // Use the backend's pre-computed net salary when available.
     if (d.netSalary && d.netSalary > 0) return d.netSalary;
-    // Fallback: local formula (used before first API response or on error).
-    return SalaryCalculationService.computeNetPay(d, _presentCount);
+    return SalaryCalculationService.computeNetPay(d as any, _presentCount);
   },
 
   clear: async () => {

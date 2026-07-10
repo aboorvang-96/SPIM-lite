@@ -7,7 +7,7 @@ import { useSalaryStore } from '../../store/salaryStore';
 import { useMachineStore } from '../../store/machineStore';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { formatINR } from '../../utils/currencyFormatter';
+import { formatINR, formatCount } from '../../utils/currencyFormatter';
 import { isMachineLogRestricted } from '../../utils/permissions';
 
 export default function DashboardScreen() {
@@ -16,8 +16,10 @@ export default function DashboardScreen() {
   const employeeLoading = useEmployeeStore(state => state.loading);
   const employeeError = useEmployeeStore(state => state.error);
   const refreshEmployee = useEmployeeStore(state => state.refresh);
-  const getPresentCount = useAttendanceStore(state => state.getPresentCount);
-  const getNetPay = useSalaryStore(state => state.getNetPay);
+  // Both figures are direct reads from Suite via /api/mobile/salary/.
+  // Undefined stays undefined — the formatter renders "—".
+  const presentDays = useSalaryStore(state => state.details.presentDays);
+  const netPay      = useSalaryStore(state => state.details.netSalary);
   const loadMachines = useMachineStore(state => state.loadMachines);
   const getMachineForEmployee = useMachineStore(state => state.getMachineForEmployee);
   // Subscribe to logs so this component re-renders when machineStore.logs is
@@ -30,29 +32,7 @@ export default function DashboardScreen() {
 
   useEffect(() => { loadMachines(); }, [loadMachines]);
 
-  // Mock current cycle dates (26th to 25th)
   const today = new Date();
-  let cycleStartMonth = today.getMonth();
-  let cycleStartYear = today.getFullYear();
-  if (today.getDate() <= 25) {
-    cycleStartMonth -= 1;
-    if (cycleStartMonth < 0) {
-      cycleStartMonth = 11;
-      cycleStartYear -= 1;
-    }
-  }
-  const cycleStart = new Date(cycleStartYear, cycleStartMonth, 26);
-  
-  let cycleEndMonth = cycleStartMonth + 1;
-  let cycleEndYear = cycleStartYear;
-  if (cycleEndMonth > 11) {
-    cycleEndMonth = 0;
-    cycleEndYear += 1;
-  }
-  const cycleEnd = new Date(cycleEndYear, cycleEndMonth, 25);
-  
-  const presentCount = getPresentCount(format(cycleStart, 'yyyy-MM-dd'), format(cycleEnd, 'yyyy-MM-dd'));
-  const netPay = getNetPay(presentCount);
   // Business rule: machine work is only displayed when today's attendance
   // status is 'Present' or 'Half Day'. The worklog row in Supabase is left
   // untouched — this is a UI-only gate so the chip reappears automatically
@@ -193,7 +173,7 @@ export default function DashboardScreen() {
       <View style={styles.statsContainer}>
         <Surface style={styles.statBox} elevation={1}>
           <Text variant="titleSmall" style={{ color: theme.colors.onSurfaceVariant }}>Attendance</Text>
-          <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{presentCount}</Text>
+          <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>{formatCount(presentDays)}</Text>
           <Text variant="labelSmall">Days Present</Text>
         </Surface>
 

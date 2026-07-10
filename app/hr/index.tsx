@@ -115,8 +115,9 @@ export default function HrDashboard() {
       setAttendance(attRes.value);
       // Prefer the server's total_employees when we have it, since it
       // reflects the same tenant-scoped roster the counts were computed against.
-      if (Number.isFinite(attRes.value.total_employees) && attRes.value.total_employees > 0) {
-        setTotalEmployees(attRes.value.total_employees);
+      const tot = attRes.value.total_employees;
+      if (tot != null && Number.isFinite(tot) && tot > 0) {
+        setTotalEmployees(tot);
       }
     } else {
       setAttendance(null);

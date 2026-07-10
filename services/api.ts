@@ -91,16 +91,27 @@ export async function mobileLogin(
   orgCode: string,
   _deviceInfo?: string,
 ): Promise<MobileLoginResponse> {
-  try {
-    const data: any = await apiPost(
+  // Bounded timeout + one silent retry on network-level failure (status 0).
+  // Guards the pre-auth call against transient TCP/DNS blips and Railway
+  // cold-start hiccups that otherwise surface as "Network request failed".
+  // Real HTTP errors (4xx/5xx) are NOT retried — they fall straight through.
+  const doPost = () =>
+    apiPost(
       '/api/mobile/login/',
-      {
-        login_id: employeeId,
-        password,
-        org_code: orgCode,
-      },
-      { skipAuth: true },
+      { login_id: employeeId, password, org_code: orgCode },
+      { skipAuth: true, timeoutMs: 30000 },
     );
+  try {
+    let data: any;
+    try {
+      data = await doPost();
+    } catch (err: any) {
+      if (err instanceof ApiError && err.status === 0) {
+        data = await doPost();
+      } else {
+        throw err;
+      }
+    }
 
     const token: string | undefined = data?.token || data?.access || data?.access_token;
     const emp = data?.employee || data?.user || null;
@@ -309,7 +320,9 @@ export async function fetchProfile(): Promise<MobileProfileResponse> {
 export interface MobileAttendanceRecord {
   id: number;
   date: string;
-  status: 'present' | 'absent' | 'half_day' | 'leave';
+  // Suite's raw wire status. Widened to accept the full display_status()
+  // set (including 'sunday') so nothing forces a client-side re-mapping.
+  status: 'present' | 'absent' | 'half_day' | 'leave' | 'week_off' | 'no_week_off' | 'holiday' | 'sunday';
   source: string;
   /** Server-side lock flag — employee may not re-mark when true. */
   locked?: boolean;
@@ -322,7 +335,10 @@ export async function fetchAttendance(month?: string): Promise<MobileAttendanceR
   const data: any = await apiGet(`/api/mobile/attendance/${qs}`);
   const list: any[] = Array.isArray(data) ? data : data?.attendance || data?.records || data?.results || [];
   return list
-    .filter(r => ['present', 'absent', 'half_day', 'leave', 'week_off', 'no_week_off', 'holiday'].includes(r.status))
+    // 'sunday' is a first-class label from Suite's display_status() /
+    // ensure_sunday_holidays(); passing it through prevents the mobile
+    // client from having to synthesise "Sunday" on missing dates.
+    .filter(r => ['present', 'absent', 'half_day', 'leave', 'week_off', 'no_week_off', 'holiday', 'sunday'].includes(r.status))
     .map(r => ({
       id:     Number(r.id),
       date:   str(r.date).slice(0, 10),
@@ -378,18 +394,37 @@ export async function fetchSalary(): Promise<any> {
   try {
     const data: any = await apiGet('/api/mobile/salary/');
     const sal = data?.salary || data;
+    // Zero fallbacks. Every field is a raw pass-through: if SPIM Suite
+    // omits it, the value stays `undefined` through the store and the UI
+    // renders "—" so a missing backend field is visible to the user.
+    // No `?? '0.00'`, no `?? 0`, no client-side substitute.
+    const optStr = (v: any): string | undefined =>
+      v === undefined || v === null ? undefined : String(v);
+    const optNum = (v: any): number | undefined => {
+      if (v === undefined || v === null || v === '') return undefined;
+      const n = typeof v === 'number' ? v : Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
     return {
       success: true,
       salary: {
-        net_salary:   str(sal.net_salary   ?? '0.00'),
-        basic_salary: str(sal.basic_salary ?? '0.00'),
-        allowances:   str(sal.allowances   ?? '0.00'),
-        deductions:   str(sal.deductions   ?? '0.00'),
-        paid_days:    Number(sal.paid_days    ?? 0),
-        present_days: Number(sal.present_days ?? 0),
-        absent_days:  Number(sal.absent_days  ?? 0),
-        cycle_start:  str(sal.cycle_start  ?? ''),
-        cycle_end:    str(sal.cycle_end    ?? ''),
+        net_salary:          optStr(sal.net_salary),
+        basic_salary:        optStr(sal.basic_salary),
+        allowances:          optStr(sal.allowances),
+        deductions:          optStr(sal.deductions),
+        paid_days:           optNum(sal.paid_days),
+        present_days:        optNum(sal.present_days),
+        absent_days:         optNum(sal.absent_days),
+        cycle_start:         optStr(sal.cycle_start),
+        cycle_end:           optStr(sal.cycle_end),
+        attendance_earnings: optStr(sal.attendance_earnings),
+        daily_rate:          optStr(sal.daily_rate),
+        total_working_days:  optNum(sal.total_working_days),
+        advance_deduction:   optStr(sal.advance_deduction),
+        food_allowance:      optStr(sal.food_allowance),
+        // No fallback to legacy `allowances`. Suite must expose
+        // `overtime_allowance` as its own field.
+        overtime_allowance:  optStr(sal.overtime_allowance),
       },
     };
   } catch (err: any) {

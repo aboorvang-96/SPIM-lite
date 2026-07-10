@@ -55,27 +55,39 @@ export const SalaryCalculationService = {
     return earnings + rule.otAllowance - rule.pfDeduction - rule.advanceDeduction;
   },
 
-  /** Full breakdown — used by SalaryScreen and any future report renderer. */
+  /**
+   * Full breakdown. DEAD helper — retained per Phase 10.2's "no cleanup"
+   * rule. No screen calls it. The inline `?? 0` fallbacks below exist only
+   * to keep this unused code type-checking against the now-optional
+   * SalaryDetails; no user-facing number flows through this function.
+   */
   computeBreakdown(
     rule: SalaryRule | SalaryDetails,
     presentCount: number,
     meta?: { role?: string; level?: string },
   ): SalaryCalculationResult {
-    const dailyRate = this.computeDailyRate(rule);
-    const attendanceEarnings = this.computeAttendanceEarnings(rule, presentCount);
-    const netPay = this.computeNetPay(rule, presentCount);
+    const coerced: SalaryRule = {
+      baseMonthly:      rule.baseMonthly      ?? 0,
+      otAllowance:      rule.otAllowance      ?? 0,
+      pfDeduction:      rule.pfDeduction      ?? 0,
+      advanceDeduction: rule.advanceDeduction ?? 0,
+      totalWorkingDays: rule.totalWorkingDays ?? 0,
+    };
+    const dailyRate = this.computeDailyRate(coerced);
+    const attendanceEarnings = this.computeAttendanceEarnings(coerced, presentCount);
+    const netPay = this.computeNetPay(coerced, presentCount);
     return {
       role: meta?.role,
       level: meta?.level,
-      monthlySalary: rule.baseMonthly,
+      monthlySalary: coerced.baseMonthly,
       dailyRate: round(dailyRate),
       attendanceEarnings,
-      otAllowance: rule.otAllowance,
-      pfAmount: rule.pfDeduction,
-      advanceDeduction: rule.advanceDeduction,
+      otAllowance: coerced.otAllowance,
+      pfAmount: coerced.pfDeduction,
+      advanceDeduction: coerced.advanceDeduction,
       netPay,
       presentDays: presentCount,
-      totalWorkingDays: rule.totalWorkingDays,
+      totalWorkingDays: coerced.totalWorkingDays,
     };
   },
 };

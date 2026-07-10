@@ -98,6 +98,8 @@ function fromBackend(r: MobileAttendanceRecord): AttendanceRecord {
     week_off:    'Week Off',
     no_week_off: 'No Week Off',
     holiday:     'Holiday',
+    // Suite's display_status() label — passed through verbatim.
+    sunday:      'Sunday',
   };
 
   return {
