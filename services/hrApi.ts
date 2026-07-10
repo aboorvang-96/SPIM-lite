@@ -461,6 +461,36 @@ export async function deleteHrExpense(pk: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// HR Dashboard — GET /api/mobile/hr/dashboard/today/
+//
+// Single aggregated call powering the HR dashboard's attendance tiles.
+// The Suite computes today's Present / Absent / Late counts server-side
+// using the same attendance logic that drives the report endpoint, so no
+// business rules are duplicated on the client and we avoid an N-per-employee
+// fan-out. Cycle math + income/expense totals stay client-side (they reuse
+// existing list endpoints).
+// ---------------------------------------------------------------------------
+
+export interface HrDashboardToday {
+  date: string;              // YYYY-MM-DD (server's today, tenant TZ)
+  total_employees: number;
+  present: number;
+  absent: number;
+  late: number | null;       // null if Suite has no "late" concept yet
+}
+
+export async function fetchHrDashboardToday(): Promise<HrDashboardToday> {
+  const data: any = await apiGet('/api/mobile/hr/dashboard/today/');
+  return {
+    date:            str(data?.date),
+    total_employees: Number(data?.total_employees ?? 0),
+    present:         Number(data?.present ?? 0),
+    absent:          Number(data?.absent ?? 0),
+    late:            data?.late == null ? null : Number(data.late),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // HR Attendance Report — resolves the fully-qualified download URL for
 // GET /api/mobile/hr/attendance/report/. The endpoint streams PDF or XLSX
 // with Content-Disposition: attachment, so the caller just hands the URL
