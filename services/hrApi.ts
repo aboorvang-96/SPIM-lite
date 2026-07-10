@@ -496,3 +496,65 @@ export async function hrAttendanceReportUrl(
   if (token)         params.set('token',     token);
   return `${API_BASE_URL}/api/mobile/hr/attendance/report/?${params.toString()}`;
 }
+
+// ---------------------------------------------------------------------------
+// HR Income Report — same URL/download pattern as hrAttendanceReportUrl.
+// Filters mirror `mobile_hr_income_list` (server-side helper is shared),
+// so the report screen and the Income Management screen agree on scope.
+// ---------------------------------------------------------------------------
+
+export interface HrIncomeReportOptions {
+  search?: string;              // Party / payer substring (payment_by/title/source/description)
+  category?: number | 'all';
+  dateFrom: string;             // YYYY-MM-DD
+  dateTo:   string;             // YYYY-MM-DD
+  format:   'pdf' | 'xlsx';
+}
+
+export async function hrIncomeReportUrl(
+  opts: HrIncomeReportOptions,
+): Promise<string> {
+  const { API_BASE_URL, getAuthToken } = await import('./apiClient');
+  const token = await getAuthToken();
+  const params = new URLSearchParams();
+  params.set('format', opts.format);
+  if (opts.search) params.set('search', opts.search);
+  if (opts.category != null && opts.category !== 'all') {
+    params.set('category', String(opts.category));
+  }
+  if (opts.dateFrom) params.set('date_from', opts.dateFrom);
+  if (opts.dateTo)   params.set('date_to',   opts.dateTo);
+  if (token)         params.set('token',     token);
+  return `${API_BASE_URL}/api/mobile/hr/income/report/?${params.toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// HR Expense Report — same URL/download pattern as hrIncomeReportUrl.
+// Filters mirror `mobile_hr_expense_list` (server-side helper is shared),
+// so the report screen and the Expense Management screen agree on scope.
+// ---------------------------------------------------------------------------
+
+export interface HrExpenseReportOptions {
+  search?: string;              // Substring across description/vendor/reference/purpose/payment_by/income_source
+  category?: number | 'all';
+  dateFrom: string;             // YYYY-MM-DD
+  dateTo:   string;             // YYYY-MM-DD
+  format:   'pdf' | 'xlsx';
+}
+
+export async function hrExpenseReportUrl(
+  opts: HrExpenseReportOptions,
+): Promise<string> {
+  const { API_BASE_URL, getAuthToken } = await import('./apiClient');
+  const token = await getAuthToken();
+  const params = new URLSearchParams();
+  params.set('format', opts.format);
+  if (opts.search) params.set('search', opts.search);
+  if (opts.category != null && opts.category !== 'all') {
+    params.set('category', String(opts.category));
+  }
+  if (opts.dateFrom) params.set('date_from', opts.dateFrom);
+  if (opts.dateTo)   params.set('date_to',   opts.dateTo);
+  if (token)         params.set('token',     token);
+  return `${API_BASE_URL}/api/mobile/hr/expense/report/?${params.toString()}`;
+}
