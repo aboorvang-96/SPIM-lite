@@ -366,24 +366,40 @@ export interface MobilePayslip {
   food_allowance: string;
   food_usage: string;
   net_pay: string;
+  // Suite-computed flags. SPIM Lite must not derive these — see
+  // api.mobile_payslips docstring in SPIM Suite.
+  is_current_cycle?: boolean;
+  is_latest_generated?: boolean;
 }
 
-export async function fetchPayslips(): Promise<MobilePayslip[]> {
+export interface MobilePayslipsResponse {
+  payslips: MobilePayslip[];
+  /** Suite-picked payslip id: current-cycle if generated, else latest generated. */
+  currentPayslipId: number | null;
+}
+
+export async function fetchPayslips(): Promise<MobilePayslipsResponse> {
   const data: any = await apiGet('/api/mobile/payslips/');
   const list: any[] = Array.isArray(data) ? data : data?.payslips || data?.results || [];
-  return list.map(r => ({
-    id:              Number(r.id),
-    is_generated:    !!(r.is_generated ?? r.is_payslip_generated),
-    generated_at:    r.generated_at ?? r.payslip_generated_at ?? null,
-    month:           str(r.month).slice(0, 7),
-    basic_salary:    num2(r.basic_salary),
-    ot_allowance:    num2(r.ot_allowance),
-    advance_pay:     num2(r.advance_pay),
-    total_deduction: num2(r.total_deduction),
-    food_allowance:  num2(r.food_allowance),
-    food_usage:      num2(r.food_usage),
-    net_pay:         num2(r.net_pay),
+  const payslips = list.map(r => ({
+    id:                  Number(r.id),
+    is_generated:        !!(r.is_generated ?? r.is_payslip_generated),
+    generated_at:        r.generated_at ?? r.payslip_generated_at ?? null,
+    month:               str(r.month).slice(0, 7),
+    basic_salary:        num2(r.basic_salary),
+    ot_allowance:        num2(r.ot_allowance),
+    advance_pay:         num2(r.advance_pay),
+    total_deduction:     num2(r.total_deduction),
+    food_allowance:      num2(r.food_allowance),
+    food_usage:          num2(r.food_usage),
+    net_pay:             num2(r.net_pay),
+    is_current_cycle:    !!r.is_current_cycle,
+    is_latest_generated: !!r.is_latest_generated,
   }));
+  const rawId = data?.current_payslip_id;
+  const currentPayslipId =
+    rawId === undefined || rawId === null ? null : Number(rawId);
+  return { payslips, currentPayslipId };
 }
 
 // ---------------------------------------------------------------------------

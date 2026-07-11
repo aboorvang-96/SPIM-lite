@@ -10,12 +10,15 @@ import {
   Menu,
   TextInput,
   FAB,
+  Dialog,
+  Portal,
   useTheme,
 } from 'react-native-paper';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import {
   fetchHrIncomes,
   fetchHrIncomeCategories,
+  deleteHrIncome,
   HrIncome,
   HrIncomeCategory,
 } from '../../../services/hrApi';
@@ -57,6 +60,10 @@ export default function HrIncomeList() {
 
   const [categories, setCategories] = useState<HrIncomeCategory[]>([]);
   const [catMenuVisible, setCatMenuVisible] = useState(false);
+
+  // Suite web parity: inline per-row Delete (income:delete on templates/income/list.html).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +114,22 @@ export default function HrIncomeList() {
 
   const handleApplyFilters = () => {
     load();
+  };
+
+  const handleDelete = async (pk: number) => {
+    setDeletingId(pk);
+    try {
+      await deleteHrIncome(pk);
+      setConfirmDeleteId(null);
+      // Re-list so the removed row disappears — matches the Suite's
+      // full-page reload after income:delete.
+      await load();
+    } catch (err: any) {
+      setConfirmDeleteId(null);
+      setError(friendlyError(err));
+    } finally {
+      setDeletingId(null);
+    }
   };
   const handleClearFilters = () => {
     setSearch('');
@@ -250,13 +273,25 @@ export default function HrIncomeList() {
                         </Text>
                       ) : null}
                     </View>
-                    <Button
-                      mode="text"
-                      compact
-                      onPress={() => router.push(`/hr/income/${i.id}`)}
-                    >
-                      Edit
-                    </Button>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Button
+                        mode="text"
+                        compact
+                        onPress={() => router.push(`/hr/income/${i.id}`)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        mode="text"
+                        compact
+                        icon="delete"
+                        textColor={theme.colors.error}
+                        onPress={() => setConfirmDeleteId(i.id)}
+                        disabled={deletingId === i.id}
+                      >
+                        Delete
+                      </Button>
+                    </View>
                   </View>
                   {idx < incomes.length - 1 && <Divider style={{ marginVertical: 8 }} />}
                 </View>
@@ -275,6 +310,34 @@ export default function HrIncomeList() {
         color={theme.colors.onPrimary}
         onPress={() => router.push('/hr/income/add')}
       />
+
+      <Portal>
+        <Dialog
+          visible={confirmDeleteId !== null}
+          onDismiss={() => (deletingId == null ? setConfirmDeleteId(null) : undefined)}
+        >
+          <Dialog.Title>Delete this income record?</Dialog.Title>
+          <Dialog.Content>
+            <Text>Confirm deletion of this income record? This cannot be undone.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => setConfirmDeleteId(null)}
+              disabled={deletingId != null}
+            >
+              Cancel
+            </Button>
+            <Button
+              onPress={() => confirmDeleteId != null && handleDelete(confirmDeleteId)}
+              loading={deletingId != null}
+              disabled={deletingId != null}
+              textColor={theme.colors.error}
+            >
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }

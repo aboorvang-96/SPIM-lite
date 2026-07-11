@@ -16,7 +16,17 @@ export default function SalaryScreen() {
   const refreshEmployee = useEmployeeStore(state => state.refresh);
   const salaryDetails = useSalaryStore(state => state.details);
   const payslips = useSalaryStore(state => state.payslips);
+  const currentPayslipId = useSalaryStore(state => state.currentPayslipId);
   const refresh = useSalaryStore(state => state.refresh);
+
+  // SPIM Suite decides which payslip belongs on this screen — either the
+  // current 26→25 cycle's payslip if admin has generated it, or the most
+  // recent generated previous one. The mobile client MUST NOT compare
+  // months, sort, or otherwise select a payslip itself.
+  const currentPayslip =
+    currentPayslipId != null
+      ? payslips.find(p => p.id === currentPayslipId)
+      : undefined;
 
   useFocusEffect(
     useCallback(() => {
@@ -192,57 +202,59 @@ export default function SalaryScreen() {
       </Text>
       <Card style={styles.breakdownCard} mode="elevated" elevation={1}>
         <Card.Content>
-          {payslips.length === 0 ? (
+          {!currentPayslip ? (
             <Text variant="bodyMedium" style={{ color: '#666', textAlign: 'center', paddingVertical: 12 }}>
               No payslips yet. Once admin generates a payslip in SPIM Suite it will appear here.
             </Text>
-          ) : (
-            <>
-              {payslips.map((p, idx) => {
-                // p.month is "YYYY-MM" from the backend. Split for display.
-                const [yr, mo] = (p.month || '-').split('-');
-                const monthLabel = mo ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleString('default', { month: 'long' }) : '-';
-                return (
-                  <View key={p.id}>
-                    <View style={styles.breakdownRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text variant="bodyLarge" style={{ fontWeight: '600' }}>
-                          {monthLabel} {yr || ''}
-                        </Text>
-                        <Text variant="labelSmall" style={{ color: p.is_generated ? (theme.colors as any).success : theme.colors.error, marginTop: 2 }}>
-                          {p.is_generated ? 'Generated' : 'Pending'}
-                        </Text>
-                      </View>
-                      <Text variant="bodyMedium" style={{ marginRight: 12 }}>
-                        {formatINR(parseFloat(p.net_pay || '0'))}
-                      </Text>
-                      <Button
-                        mode="text"
-                        compact
-                        icon={p.is_generated ? 'download' : 'lock'}
-                        disabled={!p.is_generated}
-                        onPress={async () => {
-                          if (!p.is_generated) return;
-                          try {
-                            const url = await payslipDownloadUrl(p.id);
-                            await Linking.openURL(url);
-                          } catch (e: any) {
-                            Alert.alert(
-                              'Payslip unavailable',
-                              e?.message || 'Could not fetch the payslip. Please try again later.',
-                            );
-                          }
-                        }}
-                      >
-                        {p.is_generated ? 'Download' : 'Pending'}
-                      </Button>
-                    </View>
-                    {idx < payslips.length - 1 && <Divider style={{ marginVertical: 4 }} />}
-                  </View>
-                );
-              })}
-            </>
-          )}
+          ) : (() => {
+            // p.month is "YYYY-MM" from the backend. Split for display —
+            // this is UI-only string parsing, not payroll logic.
+            const [yr, mo] = (currentPayslip.month || '-').split('-');
+            const monthLabel = mo
+              ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleString('default', { month: 'long' })
+              : '-';
+            return (
+              <View style={styles.breakdownRow}>
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ fontWeight: '600' }}>
+                    {monthLabel} {yr || ''}
+                  </Text>
+                  <Text
+                    variant="labelSmall"
+                    style={{
+                      color: currentPayslip.is_generated ? (theme.colors as any).success : theme.colors.error,
+                      marginTop: 2,
+                    }}
+                  >
+                    {currentPayslip.is_generated ? 'Generated' : 'Pending'}
+                  </Text>
+                </View>
+                <Text variant="bodyMedium" style={{ marginRight: 12 }}>
+                  {formatINR(parseFloat(currentPayslip.net_pay || '0'))}
+                </Text>
+                <Button
+                  mode="text"
+                  compact
+                  icon={currentPayslip.is_generated ? 'download' : 'lock'}
+                  disabled={!currentPayslip.is_generated}
+                  onPress={async () => {
+                    if (!currentPayslip.is_generated) return;
+                    try {
+                      const url = await payslipDownloadUrl(currentPayslip.id);
+                      await Linking.openURL(url);
+                    } catch (e: any) {
+                      Alert.alert(
+                        'Payslip unavailable',
+                        e?.message || 'Could not fetch the payslip. Please try again later.',
+                      );
+                    }
+                  }}
+                >
+                  {currentPayslip.is_generated ? 'Download' : 'Pending'}
+                </Button>
+              </View>
+            );
+          })()}
         </Card.Content>
       </Card>
 

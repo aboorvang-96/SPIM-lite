@@ -159,7 +159,7 @@ export default function HrIncomeReport() {
 
       <Card style={styles.card} mode="elevated" elevation={1}>
         <Card.Title
-          title="Attendance Cycle"
+          title="Report Cycle"
           subtitle={cycle.label}
           titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
         />

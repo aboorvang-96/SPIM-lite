@@ -7,6 +7,13 @@ import { fetchSalary, fetchPayslips, MobilePayslip } from '../services/api';
 interface SalaryState {
   details: SalaryDetails;
   payslips: MobilePayslip[];
+  /**
+   * The payslip Suite has identified as "the one" to display: the current
+   * 26→25 cycle's payslip when generated, otherwise the most recent
+   * generated previous payslip. SPIM Lite never derives this — the id
+   * arrives verbatim from GET /api/mobile/payslips/.
+   */
+  currentPayslipId: number | null;
   loaded: boolean;
   loading: boolean;
   /** Pull base salary + latest payslip snapshot from SPIM Suite. */
@@ -81,15 +88,16 @@ function optNum(v: string | number | null | undefined): number | undefined {
 
 const SALARY_KEY = '@spim-lite/salary-data/v1';
 
-async function loadPersistedSalary(): Promise<{ details: SalaryDetails; payslips: MobilePayslip[] }> {
+async function loadPersistedSalary(): Promise<{ details: SalaryDetails; payslips: MobilePayslip[]; currentPayslipId: number | null }> {
   try {
     const raw = await AsyncStorage.getItem(SALARY_KEY);
-    if (!raw) return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+    if (!raw) return { details: { ...DEFAULT_DETAILS }, payslips: [], currentPayslipId: null };
     const parsed = JSON.parse(raw);
     if (typeof parsed === 'object' && parsed !== null) {
       const result = {
-        details:  parsed.details  ?? { ...DEFAULT_DETAILS },
-        payslips: parsed.payslips ?? [],
+        details:          parsed.details  ?? { ...DEFAULT_DETAILS },
+        payslips:         parsed.payslips ?? [],
+        currentPayslipId: parsed.currentPayslipId ?? null,
       };
       // Clear stale cached values so the next successful API refresh
       // overwrites them with real data instead of the old heuristic.
@@ -100,25 +108,26 @@ async function loadPersistedSalary(): Promise<{ details: SalaryDetails; payslips
       }
       return result;
     }
-    return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+    return { details: { ...DEFAULT_DETAILS }, payslips: [], currentPayslipId: null };
   } catch {
-    return { details: { ...DEFAULT_DETAILS }, payslips: [] };
+    return { details: { ...DEFAULT_DETAILS }, payslips: [], currentPayslipId: null };
   }
 }
 
-async function saveSalary(details: SalaryDetails, payslips: MobilePayslip[]): Promise<void> {
+async function saveSalary(details: SalaryDetails, payslips: MobilePayslip[], currentPayslipId: number | null): Promise<void> {
   try {
-    await AsyncStorage.setItem(SALARY_KEY, JSON.stringify({ details, payslips }));
+    await AsyncStorage.setItem(SALARY_KEY, JSON.stringify({ details, payslips, currentPayslipId }));
   } catch {
     // best effort — UI already updated
   }
 }
 
 export const useSalaryStore = create<SalaryState>((set, get) => ({
-  details:  { ...DEFAULT_DETAILS },
-  payslips: [],
-  loaded:   false,
-  loading:  false,
+  details:          { ...DEFAULT_DETAILS },
+  payslips:         [],
+  currentPayslipId: null,
+  loaded:           false,
+  loading:          false,
 
   refresh: async () => {
     if (get().loading) return;
@@ -128,16 +137,21 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
     if (get().details.baseMonthly === undefined) {
       const stored = await loadPersistedSalary();
       if (stored.details.baseMonthly !== undefined || stored.payslips.length > 0) {
-        set({ details: stored.details, payslips: stored.payslips });
+        set({
+          details:          stored.details,
+          payslips:         stored.payslips,
+          currentPayslipId: stored.currentPayslipId,
+        });
       }
     }
 
     // Step 2: fetch fresh data from API
     try {
-      const [salaryResp, payslips] = await Promise.all([
+      const [salaryResp, payslipsResp] = await Promise.all([
         fetchSalary(),
         fetchPayslips(),
       ]);
+      const { payslips, currentPayslipId } = payslipsResp;
 
       if (!salaryResp.success) throw new Error(salaryResp.error || 'Salary fetch failed');
       const sal = salaryResp.salary;
@@ -164,10 +178,10 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
       };
 
       // Step 3: set new data into store
-      set({ details, payslips, loaded: true, loading: false });
+      set({ details, payslips, currentPayslipId, loaded: true, loading: false });
 
       // Step 4: persist the fresh data
-      await saveSalary(details, payslips);
+      await saveSalary(details, payslips, currentPayslipId);
     } catch (err: any) {
       console.warn('[salaryStore.refresh] failed:', err?.message || err);
       set({ loading: false });
@@ -193,10 +207,11 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
 
   clear: async () => {
     set({
-      details:  { ...DEFAULT_DETAILS },
-      payslips: [],
-      loaded:   false,
-      loading:  false,
+      details:          { ...DEFAULT_DETAILS },
+      payslips:         [],
+      currentPayslipId: null,
+      loaded:           false,
+      loading:          false,
     });
     try {
       await AsyncStorage.removeItem(SALARY_KEY);
