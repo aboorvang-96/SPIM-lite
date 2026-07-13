@@ -8,6 +8,8 @@ import {
   Button,
   Divider,
   ActivityIndicator,
+  SegmentedButtons,
+  TextInput,
   useTheme,
 } from 'react-native-paper';
 import { Stack } from 'expo-router';
@@ -142,8 +144,18 @@ function summarise(records: HrAttendanceRecord[]): Record<SummaryLabel, number> 
 
 // ---------------------------------------------------------------------------
 
+type ViewerMode = 'employee' | 'date';
+
+interface DayRow {
+  emp: HrEmployee;
+  status: string;
+  site: string;
+}
+
 export default function HrAttendanceViewer() {
   const theme = useTheme();
+
+  const [mode, setMode] = useState<ViewerMode>('employee');
 
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
   const [empLoading, setEmpLoading] = useState(true);
@@ -153,6 +165,13 @@ export default function HrAttendanceViewer() {
   const [selected, setSelected] = useState<HrEmployee | null>(null);
 
   const [cycle, setCycle] = useState<Cycle>(() => cycleForAnchor(new Date()));
+
+  // "By Date" mode state — a single ISO date; empty means "not yet chosen".
+  const [dateISO, setDateISO] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
+  const [daySearch, setDaySearch] = useState('');
+  const [dayRows, setDayRows] = useState<DayRow[]>([]);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [dayError, setDayError] = useState<string>('');
 
   const [records, setRecords] = useState<HrAttendanceRecord[]>([]);
   const [attLoading, setAttLoading] = useState(false);
@@ -258,6 +277,88 @@ export default function HrAttendanceViewer() {
     if (selected) loadAttendance(selected, current);
   };
 
+  // ---------------------------------------------------------------------------
+  // By-date mode — fan out fetchHrAttendance(pk, date, date) per employee in
+  // parallel. The backend already filters by (tenant, employee_id, date_range)
+  // so results are correctly isolated; we just aggregate on the client. Kept
+  // simple over adding a new bulk endpoint since the roster is small and each
+  // call returns at most one row.
+  // ---------------------------------------------------------------------------
+  const loadDay = useCallback(
+    async (iso: string, roster: HrEmployee[]) => {
+      if (!iso || roster.length === 0) {
+        setDayRows([]);
+        return;
+      }
+      setDayLoading(true);
+      setDayError('');
+      try {
+        const results = await Promise.all(
+          roster.map(async emp => {
+            try {
+              const rows = await fetchHrAttendance(emp.pk, iso, iso);
+              const r = rows[0];
+              return {
+                emp,
+                status: r?.status ?? '',
+                site: r?.site ?? '',
+              } as DayRow;
+            } catch {
+              // Per-employee failure shouldn't abort the whole view — surface
+              // it as a blank status so HR can still see who's missing.
+              return { emp, status: '', site: '' } as DayRow;
+            }
+          }),
+        );
+        setDayRows(results);
+      } catch (err: any) {
+        setDayError(friendlyError(err));
+        setDayRows([]);
+      } finally {
+        setDayLoading(false);
+      }
+    },
+    [],
+  );
+
+  // Auto-reload the day view whenever the roster arrives, the mode flips to
+  // date, or the date changes. Guarded by a valid YYYY-MM-DD format so we
+  // don't spam the API while the user is mid-typing.
+  useEffect(() => {
+    if (mode !== 'date') return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return;
+    if (employees.length === 0) return;
+    loadDay(dateISO, employees);
+  }, [mode, dateISO, employees, loadDay]);
+
+  const filteredDayRows = useMemo(() => {
+    const q = daySearch.trim().toLowerCase();
+    if (!q) return dayRows;
+    return dayRows.filter(r =>
+      r.emp.name.toLowerCase().includes(q) ||
+      r.emp.id.toLowerCase().includes(q),
+    );
+  }, [dayRows, daySearch]);
+
+  const dayCounts = useMemo(() => {
+    const out: Record<SummaryLabel, number> = {
+      'Present':     0,
+      'Absent':      0,
+      'Half Day':    0,
+      'Leave':       0,
+      'Holiday':     0,
+      'Sunday':      0,
+      'Weekly Off':  0,
+      'No Week Off': 0,
+    };
+    for (const r of dayRows) {
+      if ((SUMMARY_LABELS as readonly string[]).includes(r.status)) {
+        out[r.status as SummaryLabel] += 1;
+      }
+    }
+    return out;
+  }, [dayRows]);
+
   const handleClearSelection = () => {
     setSelected(null);
     setRecords([]);
@@ -270,6 +371,166 @@ export default function HrAttendanceViewer() {
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Stack.Screen options={{ title: 'Attendance Viewer' }} />
 
+      {/* Mode toggle — pick between per-employee cycle view and per-date all-employee view */}
+      <Card style={styles.card} mode="elevated" elevation={1}>
+        <Card.Content style={{ paddingTop: 12 }}>
+          <SegmentedButtons
+            value={mode}
+            onValueChange={v => setMode(v as ViewerMode)}
+            buttons={[
+              { value: 'employee', label: 'By Employee', icon: 'account' },
+              { value: 'date',     label: 'By Date',     icon: 'calendar' },
+            ]}
+          />
+        </Card.Content>
+      </Card>
+
+      {mode === 'date' ? (
+        <>
+          <Card style={styles.card} mode="elevated" elevation={1}>
+            <Card.Title
+              title="Attendance for a Date"
+              subtitle="All employees for the selected day"
+              titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
+            />
+            <Card.Content>
+              <TextInput
+                mode="outlined"
+                label="Date (YYYY-MM-DD)"
+                value={dateISO}
+                onChangeText={setDateISO}
+                dense
+              />
+              <View style={styles.cycleRow}>
+                <Button
+                  mode="outlined"
+                  icon="chevron-left"
+                  compact
+                  onPress={() => {
+                    const d = new Date(dateISO + 'T00:00:00');
+                    if (!isNaN(d.getTime())) {
+                      d.setDate(d.getDate() - 1);
+                      setDateISO(format(d, 'yyyy-MM-dd'));
+                    }
+                  }}
+                >
+                  Previous Day
+                </Button>
+                <Button
+                  mode="text"
+                  compact
+                  onPress={() => setDateISO(format(new Date(), 'yyyy-MM-dd'))}
+                >
+                  Today
+                </Button>
+                <Button
+                  mode="outlined"
+                  icon="chevron-right"
+                  contentStyle={{ flexDirection: 'row-reverse' }}
+                  compact
+                  onPress={() => {
+                    const d = new Date(dateISO + 'T00:00:00');
+                    if (!isNaN(d.getTime())) {
+                      d.setDate(d.getDate() + 1);
+                      setDateISO(format(d, 'yyyy-MM-dd'));
+                    }
+                  }}
+                >
+                  Next Day
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.card} mode="elevated" elevation={1}>
+            <Card.Title
+              title="Summary"
+              subtitle={dateISO}
+              titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
+            />
+            <Card.Content>
+              {dayLoading || empLoading ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator />
+                  <Text style={{ marginTop: 8, color: '#666' }}>Loading…</Text>
+                </View>
+              ) : dayError || empError ? (
+                <Text style={{ color: theme.colors.error }}>{dayError || empError}</Text>
+              ) : dayRows.length === 0 ? (
+                <Text style={{ color: '#666', textAlign: 'center' }}>
+                  No attendance for this date.
+                </Text>
+              ) : (
+                <View style={styles.summaryGrid}>
+                  {SUMMARY_LABELS.map(label => (
+                    <View key={label} style={styles.summaryCell}>
+                      <Text variant="titleLarge" style={styles.summaryCount}>
+                        {dayCounts[label]}
+                      </Text>
+                      <Text variant="labelSmall" style={styles.summaryLabel}>
+                        {label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </Card.Content>
+          </Card>
+
+          {!dayLoading && !empLoading && !dayError && !empError && dayRows.length > 0 && (
+            <Card style={styles.card} mode="elevated" elevation={1}>
+              <Card.Title
+                title="Employees"
+                subtitle={`${dayRows.length} total`}
+                titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
+              />
+              <Card.Content>
+                <Searchbar
+                  placeholder="Search employees…"
+                  value={daySearch}
+                  onChangeText={setDaySearch}
+                  style={styles.searchbar}
+                />
+                {filteredDayRows.length === 0 ? (
+                  <Text style={{ color: '#666', marginTop: 12, textAlign: 'center' }}>
+                    No employees match “{daySearch}”.
+                  </Text>
+                ) : (
+                  filteredDayRows.map((r, idx) => (
+                    <View key={r.emp.pk}>
+                      <View style={styles.historyRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text variant="bodyLarge" style={{ fontWeight: 'bold' }}>
+                            {r.emp.name}
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: '#666' }}>
+                            {[r.emp.id, r.emp.role, r.emp.dept].filter(Boolean).join(' • ')}
+                          </Text>
+                        </View>
+                        <Text
+                          variant="bodyLarge"
+                          style={{
+                            width: 110,
+                            textAlign: 'right',
+                            fontWeight: 'bold',
+                            color: r.status ? theme.colors.secondary : '#999',
+                          }}
+                        >
+                          {r.status || '—'}
+                        </Text>
+                      </View>
+                      {idx < filteredDayRows.length - 1 && <Divider style={{ marginVertical: 6 }} />}
+                    </View>
+                  ))
+                )}
+              </Card.Content>
+            </Card>
+          )}
+
+          <View style={{ height: 40 }} />
+        </>
+      ) : (
+      <>
       {/* Cycle selector — always visible so HR can change window before/after picking */}
       <Card style={styles.card} mode="elevated" elevation={1}>
         <Card.Title
@@ -490,6 +751,8 @@ export default function HrAttendanceViewer() {
       )}
 
       <View style={{ height: 40 }} />
+      </>
+      )}
     </ScrollView>
   );
 }
