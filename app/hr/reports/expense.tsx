@@ -59,9 +59,12 @@ function cycleForAnchor(anchor: Date): Cycle {
 }
 
 function shiftCycle(cycle: Cycle, months: number): Cycle {
-  const anchor = new Date(cycle.end);
+  // Anchor on cycle.start (already day 26). Using cycle.end (day 25)
+  // + setMonth(±m) + setDate(26) landed on the start of cycle N+m+1, so
+  // -1 was a no-op and +1 skipped one. Every month has a day 26, so no
+  // month-overflow drift.
+  const anchor = new Date(cycle.start);
   anchor.setMonth(anchor.getMonth() + months);
-  anchor.setDate(26);
   return cycleForAnchor(anchor);
 }
 

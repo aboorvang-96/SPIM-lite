@@ -3,7 +3,6 @@ import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import { Text, Card, Surface, useTheme, Divider, ProgressBar, Button, ActivityIndicator } from 'react-native-paper';
 import { useEmployeeStore } from '../../store/employeeStore';
 import { useSalaryStore } from '../../store/salaryStore';
-import { useAttendanceStore } from '../../store/attendanceStore';
 import { useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';
 import { formatINR, formatINRPerDay, formatINRProgress, formatCount } from '../../utils/currencyFormatter';
@@ -19,12 +18,6 @@ export default function SalaryScreen() {
   const payslips = useSalaryStore(state => state.payslips);
   const currentPayslipId = useSalaryStore(state => state.currentPayslipId);
   const refresh = useSalaryStore(state => state.refresh);
-  const getPresentCount = useAttendanceStore(state => state.getPresentCount);
-  // Subscribe so display values re-derive when attendance rehydrates on
-  // cold start — otherwise fallback presentCount stays at 0 until the
-  // next focus-effect refresh.
-  const _records = useAttendanceStore(state => state.records);
-  void _records;
 
   // SPIM Suite decides which payslip belongs on this screen — either the
   // current 26→25 cycle's payslip if admin has generated it, or the most
@@ -41,67 +34,21 @@ export default function SalaryScreen() {
     }, [refresh])
   );
 
-  // Backend `/api/mobile/salary/` is the source of truth. For roles where
-  // Suite delivers the full payroll snapshot (admin / HR / accounts) every
-  // field is used verbatim — the client performs no arithmetic.
-  //
-  // For regular Employee accounts the endpoint currently returns only
-  // basic_salary and net_salary; every derived field (daily_rate,
-  // attendance_earnings, paid_days, total_working_days, cycle boundaries,
-  // OT / food / PF / advance) is absent. Rendering those as "—" leaves the
-  // Salary Breakdown effectively empty, so the client derives fallbacks —
-  // used ONLY when Suite is silent — from the values that do arrive plus
-  // the local attendance store. Backend field always wins when present.
-  const base = salaryDetails.baseMonthly;
-
-  // Fallback cycle boundaries: local 26 → 25 window. Never overrides Suite.
-  const now = new Date();
-  const fallbackCycleStart = (() => {
-    let m = now.getMonth();
-    let y = now.getFullYear();
-    if (now.getDate() <= 25) {
-      m -= 1;
-      if (m < 0) { m = 11; y -= 1; }
-    }
-    return new Date(y, m, 26);
-  })();
-  const fallbackCycleEnd = (() => {
-    let m = fallbackCycleStart.getMonth() + 1;
-    let y = fallbackCycleStart.getFullYear();
-    if (m > 11) { m = 0; y += 1; }
-    return new Date(y, m, 25);
-  })();
-
-  const cycleStart = salaryDetails.cycleStart ? new Date(salaryDetails.cycleStart) : fallbackCycleStart;
-  const cycleEnd   = salaryDetails.cycleEnd   ? new Date(salaryDetails.cycleEnd)   : fallbackCycleEnd;
-
-  // Total working days denominator: prefer Suite, else use the cycle span
-  // (which for a 26 → 25 window is exactly 30 — matching the divisor Suite
-  // uses when it computes net_salary for these employees).
-  const cycleSpanDays = Math.round(
-    (cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)
-  ) + 1;
-  const totalWorkingDays = salaryDetails.totalWorkingDays ?? cycleSpanDays;
-
-  // Paid / present days: prefer Suite, else count from the local
-  // attendance store within the cycle (excludes Sundays, matches Suite's
-  // .exclude(date__week_day=1) rule; see attendanceStore.getPresentCount).
-  const cycleStartStr = format(cycleStart, 'yyyy-MM-dd');
-  const cycleEndStr   = format(cycleEnd,   'yyyy-MM-dd');
-  const localPresent  = getPresentCount(cycleStartStr, cycleEndStr);
-  const presentCount = salaryDetails.presentDays ?? localPresent;
-  const paidDays     = salaryDetails.paidDays    ?? localPresent;
-
-  // Daily rate & attendance earnings: prefer Suite, else derive from base.
-  const dailyRate = salaryDetails.dailyRate
-    ?? (base != null && totalWorkingDays ? base / totalWorkingDays : undefined);
-  const attendanceEarnings = salaryDetails.attendanceEarnings
-    ?? (dailyRate != null ? Math.round(dailyRate * paidDays) : undefined);
-
-  // Net pay: prefer Suite (its number is authoritative). Only fall back to
-  // attendance earnings when Suite is silent AND we could derive it.
-  const netPay = salaryDetails.netSalary ?? attendanceEarnings;
-  const foodAllowance = salaryDetails.foodAllowance;
+  // Backend `/api/mobile/salary/` is the SOLE source of truth. Every value
+  // shown below is a verbatim pass-through — no fallback math, no
+  // derivation, no local attendance-store math. A field missing from the
+  // Suite response renders as "—" (via the format helpers, which return
+  // "—" for undefined). Fixing a missing field means fixing the Suite
+  // endpoint, not inventing a value here.
+  const cycleStart          = salaryDetails.cycleStart ? new Date(salaryDetails.cycleStart) : undefined;
+  const cycleEnd            = salaryDetails.cycleEnd   ? new Date(salaryDetails.cycleEnd)   : undefined;
+  const totalWorkingDays    = salaryDetails.totalWorkingDays;
+  const presentCount        = salaryDetails.presentDays;
+  const paidDays            = salaryDetails.paidDays;
+  const dailyRate           = salaryDetails.dailyRate;
+  const attendanceEarnings  = salaryDetails.attendanceEarnings;
+  const netPay              = salaryDetails.netSalary;
+  const foodAllowance       = salaryDetails.foodAllowance;
 
   // Visual progress bar percentage — UI-only rendering value.
   const progressFraction = (paidDays != null && totalWorkingDays)
@@ -156,7 +103,9 @@ export default function SalaryScreen() {
           {formatINR(netPay)}
         </Text>
         <Text variant="labelLarge" style={{ marginTop: 8, color: theme.colors.secondary }}>
-          {`For ${format(cycleStart, 'MMM')} - ${format(cycleEnd, 'MMM yyyy')} Cycle`}
+          {cycleStart && cycleEnd
+            ? `For ${format(cycleStart, 'MMM')} - ${format(cycleEnd, 'MMM yyyy')} Cycle`
+            : '—'}
         </Text>
       </Surface>
 
