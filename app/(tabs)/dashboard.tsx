@@ -195,10 +195,12 @@ export default function DashboardScreen() {
             <IconButton icon="cash-multiple" mode="contained" containerColor={theme.colors.secondary} iconColor={theme.colors.onPrimary} size={32} onPress={() => router.navigate('/(tabs)/salary')} />
             <Text variant="labelMedium">Salary</Text>
           </View>
-          <View style={styles.actionItem}>
-            <IconButton icon="cog-outline" mode="contained" containerColor={theme.colors.secondary} iconColor={theme.colors.onPrimary} size={32} onPress={() => router.navigate('/(tabs)/machines')} />
-            <Text variant="labelMedium">Machines</Text>
-          </View>
+          {!machineRestricted && (
+            <View style={styles.actionItem}>
+              <IconButton icon="cog-outline" mode="contained" containerColor={theme.colors.secondary} iconColor={theme.colors.onPrimary} size={32} onPress={() => router.navigate('/(tabs)/machines')} />
+              <Text variant="labelMedium">Machines</Text>
+            </View>
+          )}
           <View style={styles.actionItem}>
             <IconButton icon="account-cog" mode="contained" containerColor={theme.colors.primary} iconColor={theme.colors.onPrimary} size={32} onPress={() => router.navigate('/(tabs)/profile')} />
             <Text variant="labelMedium">Profile</Text>

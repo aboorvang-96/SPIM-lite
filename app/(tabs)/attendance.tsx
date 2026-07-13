@@ -7,7 +7,6 @@ import { useEmployeeStore } from '../../store/employeeStore';
 import { useSalaryStore } from '../../store/salaryStore';
 import { format } from 'date-fns';
 import { useFocusEffect } from 'expo-router';
-import MachineLogPopup from '../../components/attendance/MachineLogPopup';
 import { formatCount, MISSING_VALUE } from '../../utils/currencyFormatter';
 
 export default function AttendanceScreen() {
@@ -31,7 +30,6 @@ export default function AttendanceScreen() {
   // machineStore.logs is hydrated/updated (see dashboard.tsx for details).
   const _machineLogs = useMachineStore(state => state.logs);
   void _machineLogs;
-  const [machinePopupVisible, setMachinePopupVisible] = useState(false);
   const [presentExpanded, setPresentExpanded] = useState(false);
   const [absentExpanded,  setAbsentExpanded]  = useState(false);
 
@@ -130,8 +128,6 @@ export default function AttendanceScreen() {
     ? getMachineForEmployee(employee.id)
     : null;
 
-  const handleOpenMachineLog = () => setMachinePopupVisible(true);
-
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
 
@@ -161,9 +157,6 @@ export default function AttendanceScreen() {
               ) : (
                 <Chip icon="alert-circle-outline" compact style={styles.machineChipMissing}>No machine logged</Chip>
               )}
-              <Button compact mode="text" icon="pencil" onPress={handleOpenMachineLog}>
-                {assignedMachine ? 'Change' : 'Log Now'}
-              </Button>
             </View>
           </View>
         ) : (
@@ -286,11 +279,6 @@ export default function AttendanceScreen() {
       </Card>
 
       <View style={{ height: 40 }} />
-
-      <MachineLogPopup
-        visible={machinePopupVisible}
-        onDismiss={() => setMachinePopupVisible(false)}
-      />
     </ScrollView>
   );
 }

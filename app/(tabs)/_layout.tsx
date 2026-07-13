@@ -9,7 +9,7 @@ import { useAttendanceStore } from '../../store/attendanceStore';
 import { useSalaryStore } from '../../store/salaryStore';
 import { useMachineStore } from '../../store/machineStore';
 import SpimHeader from '../../components/ui/SpimHeader';
-import { isHrUser } from '../../utils/permissions';
+import { isHrUser, isMachineLogRestricted } from '../../utils/permissions';
 
 export default function TabsLayout() {
   const theme = useTheme();
@@ -33,6 +33,11 @@ export default function TabsLayout() {
   // route. Non-HR users see the existing "More" tab unchanged.
   const employee = useEmployeeStore(s => s.employee);
   const hr = isHrUser(employee);
+  // Management users (admin / HR / manager / accounts) don't get the
+  // Machine tab at all — the route stays registered so deep links resolve
+  // without crashing, but `href: null` removes the icon and blocks the
+  // tab-bar navigation entry point.
+  const machineTabHidden = isMachineLogRestricted(employee);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -87,6 +92,7 @@ export default function TabsLayout() {
         name="machines"
         options={{
           title: 'Machines',
+          href: machineTabHidden ? null : '/(tabs)/machines',
           tabBarIcon: ({ color, size }) =>
             Platform.OS === 'web' ? (
               <Text style={{ fontSize: 20, color }}>⚙️</Text>
