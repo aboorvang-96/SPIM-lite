@@ -555,12 +555,6 @@ export async function hrAttendanceReportUrl(
   if (opts.dateFrom) params.set('date_from', opts.dateFrom);
   if (opts.dateTo)   params.set('date_to',   opts.dateTo);
   if (token)         params.set('token',     token);
-  // Cache-buster: Linking.openURL hands the SAME URL to the OS browser each
-  // time HR downloads the same cycle, so iOS/Android would happily serve the
-  // previous PDF from the download cache after Suite redeploys a new
-  // renderer. A unique `_ts` per invocation forces a fresh fetch. The Django
-  // view ignores unknown query params.
-  params.set('_ts', String(Date.now()));
   return `${API_BASE_URL}/api/mobile/hr/attendance/report/?${params.toString()}`;
 }
 
