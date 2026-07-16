@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import {
   Text,
   Card,
@@ -19,6 +19,7 @@ import {
   fetchHrExpenses,
   fetchHrExpenseCategories,
   deleteHrExpense,
+  hrExpenseReportUrl,
   HrExpense,
   HrExpenseCategory,
 } from '../../../services/hrApi';
@@ -64,6 +65,28 @@ export default function HrExpenseList() {
   // templates/finance/list.html).
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Report download — reuses hrExpenseReportUrl, respects the same filters
+  // the list is currently showing (search / category / date range).
+  const [busyFormat, setBusyFormat] = useState<'pdf' | 'xlsx' | null>(null);
+  const handleDownload = async (fmt: 'pdf' | 'xlsx') => {
+    if (busyFormat) return;
+    setBusyFormat(fmt);
+    try {
+      const url = await hrExpenseReportUrl({
+        search:   search.trim() || undefined,
+        category: categoryId ?? 'all',
+        dateFrom: dateFrom.trim(),
+        dateTo:   dateTo.trim(),
+        format:   fmt,
+      });
+      await Linking.openURL(url);
+    } catch (err: any) {
+      Alert.alert('Report unavailable', friendlyError(err));
+    } finally {
+      setBusyFormat(null);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,15 +158,13 @@ export default function HrExpenseList() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <Stack.Screen options={{ title: 'Expense Management' }} />
+      <Stack.Screen options={{ title: 'Expense Master' }} />
 
       <ScrollView style={styles.container}>
         <Card style={styles.card} mode="elevated" elevation={1}>
           <Card.Title
             title="Filters"
-            subtitle="Search matches description / vendor / reference / expense type / from / source"
             titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
-            subtitleNumberOfLines={2}
           />
           <Card.Content>
             <Searchbar
@@ -219,6 +240,32 @@ export default function HrExpenseList() {
               </Button>
               <Button mode="text" onPress={handleClearFilters} compact>
                 Clear
+              </Button>
+            </View>
+
+            <Divider style={{ marginTop: 12 }} />
+            <View style={styles.downloadRow}>
+              <Button
+                mode="contained"
+                icon="file-pdf-box"
+                onPress={() => handleDownload('pdf')}
+                loading={busyFormat === 'pdf'}
+                disabled={busyFormat !== null}
+                style={{ flex: 1 }}
+                compact
+              >
+                PDF
+              </Button>
+              <Button
+                mode="contained-tonal"
+                icon="file-excel-box"
+                onPress={() => handleDownload('xlsx')}
+                loading={busyFormat === 'xlsx'}
+                disabled={busyFormat !== null}
+                style={{ flex: 1 }}
+                compact
+              >
+                Excel
               </Button>
             </View>
           </Card.Content>
@@ -356,6 +403,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   loadingBox: { alignItems: 'center', paddingVertical: 24 },
+  downloadRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
   fab: {
     position: 'absolute',
     right: 16,

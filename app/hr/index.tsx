@@ -267,7 +267,6 @@ export default function HrDashboard() {
           <NavCard icon="cash-multiple"        label="Salary Summary"  onPress={() => router.push('/hr/attendance')} />
           <NavCard icon="cash-plus"            label="Income"          onPress={() => router.push('/hr/income')} />
           <NavCard icon="cash-minus"           label="Expense"         onPress={() => router.push('/hr/expense')} />
-          <NavCard icon="file-chart"           label="Reports"         onPress={() => router.push('/hr/reports')} />
         </Card.Content>
       </Card>
 

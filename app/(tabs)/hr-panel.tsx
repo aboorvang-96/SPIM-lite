@@ -30,46 +30,25 @@ export default function HrPanelTab() {
       <Text variant="titleLarge" style={styles.heading}>HR Panel</Text>
       <List.Section>
         <List.Item
-          title="Attendance Viewer"
-          description="View any employee's attendance"
-          left={props => <List.Icon {...props} icon="calendar-search" />}
+          title="Employees Master"
+          description="Employees, attendance, salary & reports"
+          left={props => <List.Icon {...props} icon="account-group" />}
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/attendance')}
         />
         <List.Item
-          title="Income Management"
-          description="View, add, edit, delete income"
+          title="Income Master"
+          description="Manage income & download reports"
           left={props => <List.Icon {...props} icon="cash-plus" />}
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/income')}
         />
         <List.Item
-          title="Expense Management"
-          description="View, add, edit, delete expenses"
+          title="Expense Master"
+          description="Manage expenses & download reports"
           left={props => <List.Icon {...props} icon="cash-minus" />}
           right={props => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => router.push('/hr/expense')}
-        />
-        <List.Item
-          title="Attendance Reports"
-          description="Download PDF / Excel by employee or cycle"
-          left={props => <List.Icon {...props} icon="file-chart" />}
-          right={props => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => router.push('/hr/reports/attendance')}
-        />
-        <List.Item
-          title="Income Reports"
-          description="Download PDF / Excel by party, category, or cycle"
-          left={props => <List.Icon {...props} icon="file-document" />}
-          right={props => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => router.push('/hr/reports/income')}
-        />
-        <List.Item
-          title="Expense Reports"
-          description="Download PDF / Excel by search, category, or cycle"
-          left={props => <List.Icon {...props} icon="file-document-outline" />}
-          right={props => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => router.push('/hr/reports/expense')}
         />
       </List.Section>
       <View style={{ height: 40 }} />

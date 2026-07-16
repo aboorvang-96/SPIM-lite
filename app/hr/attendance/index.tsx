@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
 import {
   Text,
   Card,
@@ -18,6 +18,7 @@ import {
   fetchHrEmployees,
   fetchHrAttendance,
   fetchHrSalary,
+  hrAttendanceReportUrl,
   HrEmployee,
   HrAttendanceRecord,
   HrSalary,
@@ -186,6 +187,16 @@ export default function HrAttendanceViewer() {
   const [salLoading, setSalLoading] = useState(false);
   const [salError, setSalError] = useState<string>('');
 
+  // Today's per-employee status — populated once after employees load so the
+  // employee list can show each person's status for today without re-deriving
+  // it on-device. Same fetchHrAttendance endpoint the by-date mode uses.
+  const todayISO = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  const [todayStatus, setTodayStatus] = useState<Record<number, string>>({});
+
+  // Download-report card state.
+  const [downloadScope, setDownloadScope] = useState<'current' | 'all'>('all');
+  const [busyFormat, setBusyFormat] = useState<'pdf' | 'xlsx' | null>(null);
+
   // Load employees once per session — the hrApi module caches the roster
   // so navigating away and back to this screen does NOT refetch. Cycle
   // changes below never touch this effect.
@@ -213,6 +224,32 @@ export default function HrAttendanceViewer() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Load today's status for every employee once per session. Fires N parallel
+  // fetchHrAttendance(pk, today, today) requests — same pattern loadDay uses
+  // in "By Date" mode, no new backend endpoint. Failures per employee fall
+  // back to '' so the row simply shows "No Entry".
+  useEffect(() => {
+    let cancelled = false;
+    if (employees.length === 0) return;
+    (async () => {
+      const results = await Promise.all(
+        employees.map(async emp => {
+          try {
+            const rows = await fetchHrAttendance(emp.pk, todayISO, todayISO);
+            return [emp.pk, rows[0]?.status ?? ''] as const;
+          } catch {
+            return [emp.pk, ''] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const map: Record<number, string> = {};
+      for (const [pk, status] of results) map[pk] = status;
+      setTodayStatus(map);
+    })();
+    return () => { cancelled = true; };
+  }, [employees, todayISO]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -372,9 +409,37 @@ export default function HrAttendanceViewer() {
     setSalError('');
   };
 
+  // Download uses the currently selected cycle and — for "current" scope —
+  // the currently selected employee. Reuses hrAttendanceReportUrl verbatim;
+  // no report-specific business logic on the client.
+  const handleDownload = async (fmt: 'pdf' | 'xlsx') => {
+    if (busyFormat) return;
+    if (downloadScope === 'current' && !selected) {
+      Alert.alert(
+        'No employee selected',
+        'Choose an employee first, or switch scope to All Employees.',
+      );
+      return;
+    }
+    setBusyFormat(fmt);
+    try {
+      const url = await hrAttendanceReportUrl({
+        employeeId: downloadScope === 'current' && selected ? selected.pk : 'all',
+        dateFrom:   cycle.startISO,
+        dateTo:     cycle.endISO,
+        format:     fmt,
+      });
+      await Linking.openURL(url);
+    } catch (err: any) {
+      Alert.alert('Report unavailable', friendlyError(err));
+    } finally {
+      setBusyFormat(null);
+    }
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Stack.Screen options={{ title: 'Attendance Viewer' }} />
+      <Stack.Screen options={{ title: 'Employees Master' }} />
 
       {/* Mode toggle — pick between per-employee cycle view and per-date all-employee view */}
       <Card style={styles.card} mode="elevated" elevation={1}>
@@ -592,18 +657,34 @@ export default function HrAttendanceViewer() {
               </Text>
             ) : (
               <List.Section>
-                {filtered.map((e, idx) => (
-                  <View key={e.pk}>
-                    <List.Item
-                      title={e.name}
-                      description={[e.id, e.role, e.dept].filter(Boolean).join(' • ')}
-                      left={props => <List.Icon {...props} icon="account" />}
-                      right={props => <List.Icon {...props} icon="chevron-right" />}
-                      onPress={() => handleSelect(e)}
-                    />
-                    {idx < filtered.length - 1 && <Divider />}
-                  </View>
-                ))}
+                {filtered.map((e, idx) => {
+                  const statusLabel = todayStatus[e.pk] || 'No Entry';
+                  const meta = [e.id, e.role, e.dept].filter(Boolean).join(' • ');
+                  return (
+                    <View key={e.pk}>
+                      <List.Item
+                        title={e.name}
+                        description={() => (
+                          <View>
+                            {meta ? (
+                              <Text variant="bodySmall" style={{ color: '#666' }}>{meta}</Text>
+                            ) : null}
+                            <Text variant="bodySmall" style={{ color: '#444', marginTop: 2 }}>
+                              Today's Status:{' '}
+                              <Text style={{ fontWeight: 'bold', color: theme.colors.secondary }}>
+                                {statusLabel}
+                              </Text>
+                            </Text>
+                          </View>
+                        )}
+                        left={props => <List.Icon {...props} icon="account" />}
+                        right={props => <List.Icon {...props} icon="chevron-right" />}
+                        onPress={() => handleSelect(e)}
+                      />
+                      {idx < filtered.length - 1 && <Divider />}
+                    </View>
+                  );
+                })}
               </List.Section>
             )}
           </Card.Content>
@@ -755,6 +836,60 @@ export default function HrAttendanceViewer() {
         </>
       )}
 
+      {/* Download Report — reuses hrAttendanceReportUrl. Cycle window comes
+          from the selector above; scope toggles between the selected employee
+          and all employees. */}
+      <Card style={styles.card} mode="elevated" elevation={1}>
+        <Card.Title
+          title="Download Report"
+          subtitle={cycle.label}
+          titleStyle={{ fontWeight: 'bold', color: theme.colors.secondary }}
+          subtitleNumberOfLines={2}
+        />
+        <Card.Content>
+          <SegmentedButtons
+            value={downloadScope}
+            onValueChange={v => setDownloadScope(v as 'current' | 'all')}
+            buttons={[
+              {
+                value: 'current',
+                label: selected ? 'Current Employee' : 'Current (none)',
+                icon: 'account',
+                disabled: !selected,
+              },
+              { value: 'all', label: 'All Employees', icon: 'account-group' },
+            ]}
+            style={{ marginBottom: 12 }}
+          />
+          <View style={styles.downloadRow}>
+            <Button
+              mode="contained"
+              icon="file-pdf-box"
+              onPress={() => handleDownload('pdf')}
+              loading={busyFormat === 'pdf'}
+              disabled={busyFormat !== null}
+              style={{ flex: 1 }}
+            >
+              PDF
+            </Button>
+            <Button
+              mode="contained-tonal"
+              icon="file-excel-box"
+              onPress={() => handleDownload('xlsx')}
+              loading={busyFormat === 'xlsx'}
+              disabled={busyFormat !== null}
+              style={{ flex: 1 }}
+            >
+              Excel
+            </Button>
+          </View>
+          <Text style={{ color: '#666', marginTop: 8, fontSize: 12 }}>
+            The file opens in your device browser and is streamed by the
+            SPIM Suite server — no data is generated on-device.
+          </Text>
+        </Card.Content>
+      </Card>
+
       <View style={{ height: 40 }} />
       </>
       )}
@@ -808,5 +943,10 @@ const styles = StyleSheet.create({
   },
   salaryValue: {
     color: '#111',
+  },
+  downloadRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
   },
 });
