@@ -45,6 +45,24 @@ export function setUnauthorizedHandler(handler: (() => void | Promise<void>) | n
 }
 
 // ---------------------------------------------------------------------------
+// Force-update handler — mirrors the 401 handler pattern above (installed by
+// the update store at app start; kept out of this module to avoid a circular
+// import). Fired exactly once when the backend returns HTTP 426.
+//
+// Latching is deliberate: further 426s from in-flight requests must not
+// re-trigger the store update, and must not re-invoke the auth cleanup that
+// already ran on the first hit. This is the primary retry-loop guard for the
+// Upgrade Required flow.
+// ---------------------------------------------------------------------------
+
+let onForceUpdate: (() => void | Promise<void>) | null = null;
+let forceUpdateFired = false;
+
+export function setForceUpdateHandler(handler: (() => void | Promise<void>) | null): void {
+  onForceUpdate = handler;
+}
+
+// ---------------------------------------------------------------------------
 // Token helpers
 // ---------------------------------------------------------------------------
 
@@ -164,6 +182,23 @@ export async function apiFetch(path: string, opts: ApiFetchOptions = {}): Promis
     throw new ApiError(err?.message || 'Network error', 0, null);
   }
   if (timeoutHandle) clearTimeout(timeoutHandle);
+
+  // HTTP 426 Upgrade Required — the backend has declared this client build
+  // unsupported. Runs BEFORE the 401 branch (a 426 must not degrade to a
+  // silent logout+redirect) and applies to every request path, including
+  // skipAuth callers like /login/, so the gate cannot be bypassed by any
+  // endpoint. Auth token is cleared here so the update screen renders in a
+  // logged-out state; the handler owns the UI takeover.
+  if (res.status === 426) {
+    if (!forceUpdateFired) {
+      forceUpdateFired = true;
+      await clearAuthToken();
+      if (onForceUpdate) {
+        try { await onForceUpdate(); } catch { /* swallow */ }
+      }
+    }
+    return res;
+  }
 
   if (res.status === 401 && !skipAuthRedirect && !skipAuth) {
     await clearAuthToken();

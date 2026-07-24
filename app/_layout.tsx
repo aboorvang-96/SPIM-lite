@@ -8,6 +8,10 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaxWidthWrapper from '../components/MaxWidthWrapper';
 import { useMachineStore } from '../store/machineStore';
 import { useAuthStore } from '../store/authStore';
+// Side-effect import: installs the HTTP 426 handler on apiClient so any
+// response with that status flips the store below into `updateRequired`.
+import { useUpdateStore } from '../store/updateStore';
+import UpdateRequiredScreen from '../components/UpdateRequiredScreen';
 
 // Web fallback for react-native-paper icons. @expo/vector-icons fonts can
 // fail to render inside an iOS Safari PWA (icons show as empty checkboxes),
@@ -44,6 +48,10 @@ const WEB_PAPER_ICONS: Record<string, string> = {
 export default function RootLayout() {
   const loadStatus = useMachineStore(state => state.loadStatus);
   const restoreSession = useAuthStore(state => state.restoreSession);
+  // Latched flag set by apiClient's 426 handler (installed by updateStore
+  // on import above). Once true it stays true — no in-app retry path,
+  // reload requires closing the app.
+  const updateRequired = useUpdateStore(state => state.updateRequired);
 
   // Hydrate persisted machine-status list as early as possible so the
   // dropdown reflects any custom statuses without waiting for the
@@ -86,10 +94,17 @@ export default function RootLayout() {
         }}
       >
         <MaxWidthWrapper>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          </Stack>
+          {updateRequired ? (
+            // Replaces the whole navigation tree — no route (login, tabs,
+            // HR) mounts, so nothing can navigate to Home or anywhere
+            // else while this screen is up.
+            <UpdateRequiredScreen />
+          ) : (
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            </Stack>
+          )}
         </MaxWidthWrapper>
       </PaperProvider>
     </SafeAreaProvider>
