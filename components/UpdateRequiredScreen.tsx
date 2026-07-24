@@ -1,26 +1,33 @@
 import { StyleSheet, Text, View } from 'react-native';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { colors } from '../constants/theme';
 
 /**
  * Full-screen block rendered by the root layout when the backend has
- * returned HTTP 426. Deliberately has zero interactive elements — no
- * buttons, no links, no retry — so the "close the app" contract from the
- * spec is the only user affordance. Because the root layout swaps this in
- * for the entire Stack, no route (attendance, machine logs, HR, login)
- * is reachable from here.
+ * returned HTTP 426. This is the ONLY UI an unsupported APK ever gets
+ * to see. Deliberate constraints, all baked into the JSX below:
+ *
+ *   - No interactive elements at all — no `Pressable`, `TouchableOpacity`,
+ *     `Button`, `Link`, or `<a>`. Nothing to tap, so nothing to bypass.
+ *   - No icon, image, or decorative widget — spec requires the page to
+ *     contain ONLY the title and message.
+ *   - No navigation hook, no router import, no `useEffect` — so the page
+ *     cannot programmatically move anywhere either.
+ *   - No `BackHandler` interception: on Android the hardware back
+ *     button therefore falls through to the OS default, which closes
+ *     the app (the ONLY affordance the spec permits).
+ *   - Rendered by RootLayout INSTEAD of the `<Stack>`, so no route
+ *     — login, tabs, dashboard, attendance, machines, HR, reports —
+ *     is mounted while this screen is up. There is nothing for a
+ *     gesture, deep link, or router state to navigate to.
  */
 export default function UpdateRequiredScreen() {
   return (
     <View style={styles.container}>
-      <View style={styles.iconWrap}>
-        <MaterialCommunityIcons name="cellphone-arrow-down" size={56} color={colors.primary} />
-      </View>
-      <Text style={styles.title}>Update Required</Text>
+      <Text style={styles.title}>SPIM Lite Update Required</Text>
       <Text style={styles.message}>
-        Your version of SPIM Lite is no longer supported.
+        This version of SPIM Lite is no longer supported.
         {'\n\n'}
-        Please install Version 2.0.0 to continue.
+        Please install Version 2.0.0 or later to continue.
       </Text>
     </View>
   );
@@ -33,15 +40,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
-  },
-  iconWrap: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
   },
   title: {
     fontSize: 24,
