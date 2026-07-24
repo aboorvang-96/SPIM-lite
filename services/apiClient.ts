@@ -8,6 +8,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { APP_VERSION } from './appVersion';
 
 /** AsyncStorage key used to persist the bearer token across launches. */
 export const AUTH_TOKEN_KEY = 'mobile_auth_token';
@@ -125,6 +126,11 @@ export async function apiFetch(path: string, opts: ApiFetchOptions = {}): Promis
     Accept: 'application/json',
     ...(headers as Record<string, string> | undefined),
   };
+
+  // App version identity — sourced from services/appVersion.ts (single
+  // source of truth: expo.version in app.json). Sent on every request so
+  // the backend can identify the client build.
+  finalHeaders['App-Version'] = APP_VERSION;
 
   let body: BodyInit | undefined;
   if (json !== undefined) {

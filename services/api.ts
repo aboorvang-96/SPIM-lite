@@ -407,8 +407,30 @@ export async function fetchPayslips(): Promise<MobilePayslipsResponse> {
 // ---------------------------------------------------------------------------
 
 export async function fetchSalary(): Promise<any> {
+  // -- TEMPORARY DEBUG INSTRUMENTATION (regression triage). Remove
+  // this whole block once the failure point is identified.
+  const _dbgUrl = `${API_BASE_URL}/api/mobile/salary/`;
+  console.log('[FETCH_SALARY_REQ]', _dbgUrl);
   try {
+    // Duplicate low-level fetch so we can see the raw body + status
+    // BEFORE apiGet parses / throws. If this network path itself fails,
+    // apiGet will re-throw and land in the catch below with the same
+    // error — the diagnostic log runs first either way.
+    let _dbgStatus: number | null = null;
+    let _dbgRawBody: string = '';
+    try {
+      const { apiFetch } = await import('./apiClient');
+      const _dbgRes = await apiFetch('/api/mobile/salary/', { method: 'GET' });
+      _dbgStatus  = _dbgRes.status;
+      _dbgRawBody = await _dbgRes.clone().text();
+      console.log('[FETCH_SALARY_HTTP]', _dbgStatus, 'bodyLen=', _dbgRawBody.length);
+      console.log('[FETCH_SALARY_RAW]',  _dbgRawBody.slice(0, 2000));
+    } catch (_probeErr: any) {
+      console.log('[FETCH_SALARY_PROBE_FAIL]', _probeErr?.name, _probeErr?.message);
+    }
+
     const data: any = await apiGet('/api/mobile/salary/');
+    console.log('[FETCH_SALARY_PARSED]', JSON.stringify(data).slice(0, 2000));
     const sal = data?.salary || data;
     // Zero fallbacks. Every field is a raw pass-through: if SPIM Suite
     // omits it, the value stays `undefined` through the store and the UI
@@ -421,7 +443,7 @@ export async function fetchSalary(): Promise<any> {
       const n = typeof v === 'number' ? v : Number(v);
       return Number.isFinite(n) ? n : undefined;
     };
-    return {
+    const _out = {
       success: true,
       salary: {
         net_salary:          optStr(sal.net_salary),
@@ -443,7 +465,21 @@ export async function fetchSalary(): Promise<any> {
         overtime_allowance:  optStr(sal.overtime_allowance),
       },
     };
+    // -- TEMPORARY DEBUG: dump the post-parse payload the store will
+    // receive. If any numeric field is undefined here it's because the
+    // matching backend field was null / '' / non-numeric.
+    console.log('[FETCH_SALARY_OUT]', JSON.stringify(_out));
+    return _out;
   } catch (err: any) {
+    // -- TEMPORARY DEBUG: full error surface for triage.
+    console.log(
+      '[FETCH_SALARY_ERR]',
+      'name=', err?.name,
+      'status=', err?.status,
+      'message=', err?.message,
+      'body=', typeof err?.body === 'string' ? err.body.slice(0, 500) : err?.body,
+      'stack=', (err?.stack || '').split('\n').slice(0, 6).join(' | '),
+    );
     return { success: false, error: err?.message || 'Failed' };
   }
 }

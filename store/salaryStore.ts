@@ -153,8 +153,17 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
       ]);
       const { payslips, currentPayslipId } = payslipsResp;
 
+      // -- TEMPORARY DEBUG: what did the salary fetch actually return?
+      console.log(
+        '[SAL_STORE_STEP1] salaryResp.success=', salaryResp.success,
+        'salaryResp.error=', salaryResp.error,
+        'has_salary=', !!salaryResp.salary,
+        'payslipsCount=', payslips?.length,
+      );
+
       if (!salaryResp.success) throw new Error(salaryResp.error || 'Salary fetch failed');
       const sal = salaryResp.salary;
+      console.log('[SAL_STORE_STEP2] raw_sal_keys=', Object.keys(sal || {}), 'sal=', JSON.stringify(sal));
 
       // Zero client-side arithmetic. Zero fallbacks. Zero cycle-length
       // derivation. Every field is a pass-through — SPIM Suite is the
@@ -177,12 +186,28 @@ export const useSalaryStore = create<SalaryState>((set, get) => ({
         foodAllowance:      optNum(sal.food_allowance),
       };
 
+      // -- TEMPORARY DEBUG: post-optNum values. Any field logged as
+      // undefined here will render as "—" on every screen that reads it.
+      console.log(
+        '[SAL_STORE_STEP3] details=', JSON.stringify(details),
+        'undefinedFields=',
+        Object.entries(details).filter(([, v]) => v === undefined).map(([k]) => k),
+      );
+
       // Step 3: set new data into store
       set({ details, payslips, currentPayslipId, loaded: true, loading: false });
 
       // Step 4: persist the fresh data
       await saveSalary(details, payslips, currentPayslipId);
     } catch (err: any) {
+      // -- TEMPORARY DEBUG: full error info so we can tell the difference
+      // between an HTTP 500, a JSON parse failure, and a network drop.
+      console.log(
+        '[SAL_STORE_ERR]',
+        'name=', err?.name,
+        'message=', err?.message,
+        'stack=', (err?.stack || '').split('\n').slice(0, 6).join(' | '),
+      );
       console.warn('[salaryStore.refresh] failed:', err?.message || err);
       set({ loading: false });
     }
