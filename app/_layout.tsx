@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
-import { Platform, Text } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
-import { theme } from '../constants/theme';
+import { theme, colors } from '../constants/theme';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaxWidthWrapper from '../components/MaxWidthWrapper';
@@ -12,6 +12,7 @@ import { useAuthStore } from '../store/authStore';
 // response with that status flips the store below into `updateRequired`.
 import { useUpdateStore } from '../store/updateStore';
 import UpdateRequiredScreen from '../components/UpdateRequiredScreen';
+import { verifyAppVersion } from '../services/versionCheck';
 
 // Web fallback for react-native-paper icons. @expo/vector-icons fonts can
 // fail to render inside an iOS Safari PWA (icons show as empty checkboxes),
@@ -53,14 +54,43 @@ export default function RootLayout() {
   // reload requires closing the app.
   const updateRequired = useUpdateStore(state => state.updateRequired);
 
-  // Hydrate persisted machine-status list as early as possible so the
-  // dropdown reflects any custom statuses without waiting for the
-  // Machine Log screen to mount.
-  useEffect(() => { loadStatus(); }, [loadStatus]);
+  // Gate every downstream side effect (session restore, machine hydration,
+  // Stack mount) on a single startup version probe. Until this flips true
+  // we render nothing but a blank background — no route, no auth, no
+  // data-loading. If the probe surfaces HTTP 426, `updateRequired` is
+  // already latched by the time this state flips, and the render branch
+  // below will pick UpdateRequiredScreen instead of the Stack.
+  const [versionChecked, setVersionChecked] = useState(false);
 
-  // Rehydrate any Supabase session AsyncStorage already holds so a returning
-  // user lands on the tab tree instead of bouncing back to login.
-  useEffect(() => { restoreSession(); }, [restoreSession]);
+  useEffect(() => {
+    // verifyAppVersion swallows network errors internally (fail-open on
+    // transport failure) and returns after the shared apiFetch has already
+    // routed any 426 through the store. Safe to fire-and-forget.
+    let cancelled = false;
+    verifyAppVersion().finally(() => {
+      if (!cancelled) setVersionChecked(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Hydrate persisted machine-status list — deferred until after the
+  // version probe completes AND the backend has accepted this build.
+  // A rejected build must never touch machine data.
+  useEffect(() => {
+    if (!versionChecked || updateRequired) return;
+    loadStatus();
+  }, [versionChecked, updateRequired, loadStatus]);
+
+  // Rehydrate any persisted session AsyncStorage already holds so a
+  // returning user lands on the tab tree instead of bouncing back to
+  // login. Gated for the same reason as loadStatus above: on an
+  // unsupported build we must not call fetchProfile (which would leak
+  // identity to a client the backend has already declared obsolete)
+  // and we must not surface an authenticated UI even briefly.
+  useEffect(() => {
+    if (!versionChecked || updateRequired) return;
+    restoreSession();
+  }, [versionChecked, updateRequired, restoreSession]);
 
   // Register the PWA service worker on web so Safari "Add to Home Screen"
   // installs work and static assets are cached for offline resilience.
@@ -94,11 +124,23 @@ export default function RootLayout() {
         }}
       >
         <MaxWidthWrapper>
+          {/*
+            Render priority (top wins):
+              1. updateRequired  → UpdateRequiredScreen. Highest priority in
+                 the app: even if the probe hasn't finished (e.g. a 426
+                 came from a later request during the probe window), a
+                 latched update flag beats everything else.
+              2. !versionChecked → blank background. No route, no login,
+                 no dashboard. This is what an unsupported APK will show
+                 for a brief moment before the 426 arrives and flips
+                 updateRequired, guaranteeing no application content ever
+                 renders on such a build.
+              3. otherwise       → normal Stack (auth/tabs), unchanged.
+          */}
           {updateRequired ? (
-            // Replaces the whole navigation tree — no route (login, tabs,
-            // HR) mounts, so nothing can navigate to Home or anywhere
-            // else while this screen is up.
             <UpdateRequiredScreen />
+          ) : !versionChecked ? (
+            <View style={{ flex: 1, backgroundColor: colors.background }} />
           ) : (
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
